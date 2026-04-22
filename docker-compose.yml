@@ -1,14 +1,35 @@
 services:
   redis:
     image: redis:7
+    container_name: yt-redis
     ports:
       - "6379:6379"
 
   db:
     image: timescale/timescaledb:latest-pg14
+    container_name: yt-db
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: pass
       POSTGRES_DB: metrics
     ports:
       - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: yt-grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  db_data:
+  grafana_data:

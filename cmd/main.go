@@ -9,6 +9,7 @@ import (
 	"github.com/alexperezortuno/youtube-tracker/internal/collector"
 	"github.com/alexperezortuno/youtube-tracker/internal/config"
 	"github.com/alexperezortuno/youtube-tracker/internal/discovery"
+	"github.com/alexperezortuno/youtube-tracker/internal/lifecycle"
 	"github.com/alexperezortuno/youtube-tracker/internal/source"
 	"github.com/alexperezortuno/youtube-tracker/internal/storage"
 )
@@ -30,22 +31,18 @@ func main() {
 		log.Fatal("missing POSTGRES_URL")
 	}
 
-	// Validación de channels
 	config.ValidateChannelIDs(cfg.ChannelIDs)
 
-	// =========================
 	// INIT DEPENDENCIES
-	// =========================
+
 	redisClient := cache.NewRedis(cfg.RedisAddr)
+	lifecycleManager := lifecycle.NewManager(redisClient, 3)
 
 	store, err := storage.NewStore(cfg.PostgresURL)
 	if err != nil {
 		log.Fatalf("error connecting to db: %v", err)
 	}
 
-	// =========================
-	// SOURCE (ENV / FILE)
-	// =========================
 	src := &source.StaticSource{
 		Config: cfg,
 	}
@@ -61,9 +58,7 @@ func main() {
 
 	log.Printf("[INFO] loaded %d channel IDs", len(channelIDs))
 
-	// =========================
 	// SERVICES
-	// =========================
 	discoverySvc := discovery.Discovery{
 		APIKey: cfg.YouTubeAPIKey,
 		Redis:  redisClient,
@@ -71,83 +66,77 @@ func main() {
 
 	collectorSvc := collector.NewCollector(
 		cfg.YouTubeAPIKey,
-		2, // requests per second
-		5, // workers
+		2,
+		5,
 	)
 
-	// =========================
-	// MAIN LOOP
-	// =========================
-	for {
+	// DISCOVERY WORKER
+	go func() {
+		for {
+			streams, _ := redisClient.GetStreams(ctx)
 
-		log.Println("====================================")
-		log.Println("[INFO] starting cycle")
+			if len(streams) == 0 {
+				log.Println("[DISCOVERY] no active streams, running discovery")
 
-		// -------------------------
-		// 1. DISCOVERY
-		// -------------------------
-		for _, ch := range channelIDs {
-			err := discoverySvc.FindLiveStreams(ctx, ch)
-			if err != nil {
-				log.Printf("[ERROR] discovery failed for channel %s: %v", ch, err)
+				for _, ch := range channelIDs {
+					err := discoverySvc.FindLiveStreams(ctx, ch)
+					if err != nil {
+						log.Printf("[ERROR] discovery failed: %v", err)
+					}
+				}
+			} else {
+				log.Println("[DISCOVERY] skipping (streams already active)")
 			}
-		}
 
-		// -------------------------
-		// 2. GET ACTIVE STREAMS
-		// -------------------------
-		streamIDs, err := redisClient.GetStreams(ctx)
+			time.Sleep(10 * time.Minute)
+		}
+	}()
+
+	// METRICS LOOP
+	for {
+		log.Println("====================================")
+		log.Println("[INFO] metrics cycle")
+
+		streams, err := redisClient.GetStreams(ctx)
 		if err != nil {
 			log.Printf("[ERROR] redis get streams: %v", err)
-			time.Sleep(10 * time.Second)
+			time.Sleep(40 * time.Second)
 			continue
 		}
 
-		if len(streamIDs) == 0 {
+		if len(streams) == 0 {
 			log.Println("[INFO] no active streams found")
 			time.Sleep(40 * time.Second)
 			continue
 		}
 
-		log.Printf("[INFO] found %d active streams", len(streamIDs))
+		log.Printf("[INFO] found %d active streams", len(streams))
 
-		// -------------------------
-		// 3. COLLECT METRICS
-		// -------------------------
-		streamsData, metrics, err := collectorSvc.Fetch(ctx, streamIDs)
+		streamsData, metrics, err := collectorSvc.Fetch(ctx, streams)
 		if err != nil {
 			log.Printf("[ERROR] collector error: %v", err)
-			time.Sleep(10 * time.Second)
+			time.Sleep(40 * time.Second)
 			continue
 		}
 
 		if len(metrics) == 0 {
 			log.Println("[WARN] no metrics returned")
-			time.Sleep(30 * time.Second)
+			time.Sleep(40 * time.Second)
 			continue
 		}
 
-		// -------------------------
-		// 4. SAVE STREAMS (DIMENSION)
-		// -------------------------
-		err = store.SaveStreams(ctx, streamsData)
-		if err != nil {
+		lifecycleManager.Process(ctx, streams, metrics)
+
+		if err := store.SaveStreams(ctx, streamsData); err != nil {
 			log.Printf("[ERROR] saving streams: %v", err)
 		}
 
-		// -------------------------
-		// 5. SAVE METRICS (FACTS)
-		// -------------------------
-		err = store.SaveMetrics(ctx, metrics)
-		if err != nil {
+		if err := store.SaveMetrics(ctx, metrics); err != nil {
 			log.Printf("[ERROR] saving metrics: %v", err)
 		}
 
 		log.Printf("[INFO] saved %d metrics", len(metrics))
 
-		// -------------------------
-		// 6. SLEEP
-		// -------------------------
-		time.Sleep(30 * time.Second)
+		time.Sleep(40 * time.Second)
 	}
 }
