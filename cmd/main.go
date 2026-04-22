@@ -9,6 +9,7 @@ import (
 	"github.com/alexperezortuno/youtube-tracker/internal/collector"
 	"github.com/alexperezortuno/youtube-tracker/internal/config"
 	"github.com/alexperezortuno/youtube-tracker/internal/discovery"
+	"github.com/alexperezortuno/youtube-tracker/internal/lifecycle"
 	"github.com/alexperezortuno/youtube-tracker/internal/source"
 	"github.com/alexperezortuno/youtube-tracker/internal/storage"
 )
@@ -32,10 +33,10 @@ func main() {
 
 	config.ValidateChannelIDs(cfg.ChannelIDs)
 
-	// =========================
 	// INIT DEPENDENCIES
-	// =========================
+
 	redisClient := cache.NewRedis(cfg.RedisAddr)
+	lifecycleManager := lifecycle.NewManager(redisClient, 3)
 
 	store, err := storage.NewStore(cfg.PostgresURL)
 	if err != nil {
@@ -57,9 +58,7 @@ func main() {
 
 	log.Printf("[INFO] loaded %d channel IDs", len(channelIDs))
 
-	// =========================
 	// SERVICES
-	// =========================
 	discoverySvc := discovery.Discovery{
 		APIKey: cfg.YouTubeAPIKey,
 		Redis:  redisClient,
@@ -71,27 +70,29 @@ func main() {
 		5,
 	)
 
-	// =========================
-	// DISCOVERY WORKER (🔥 SOLO UNO)
-	// =========================
+	// DISCOVERY WORKER
 	go func() {
 		for {
-			log.Println("[DISCOVERY] running...")
+			streams, _ := redisClient.GetStreams(ctx)
 
-			for _, ch := range channelIDs {
-				err := discoverySvc.FindLiveStreams(ctx, ch)
-				if err != nil {
-					log.Printf("[ERROR] discovery failed for channel %s: %v", ch, err)
+			if len(streams) == 0 {
+				log.Println("[DISCOVERY] no active streams, running discovery")
+
+				for _, ch := range channelIDs {
+					err := discoverySvc.FindLiveStreams(ctx, ch)
+					if err != nil {
+						log.Printf("[ERROR] discovery failed: %v", err)
+					}
 				}
+			} else {
+				log.Println("[DISCOVERY] skipping (streams already active)")
 			}
 
-			time.Sleep(10 * time.Minute) // 🔥 CONTROL DE COSTO
+			time.Sleep(10 * time.Minute)
 		}
 	}()
 
-	// =========================
 	// METRICS LOOP
-	// =========================
 	for {
 		log.Println("====================================")
 		log.Println("[INFO] metrics cycle")
@@ -123,6 +124,8 @@ func main() {
 			time.Sleep(40 * time.Second)
 			continue
 		}
+
+		lifecycleManager.Process(ctx, streams, metrics)
 
 		if err := store.SaveStreams(ctx, streamsData); err != nil {
 			log.Printf("[ERROR] saving streams: %v", err)
