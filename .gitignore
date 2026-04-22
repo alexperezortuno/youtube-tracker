@@ -31,3 +31,4 @@ go.sum
 # Editor/IDE
 .idea/
 .vscode/
+bin/*
