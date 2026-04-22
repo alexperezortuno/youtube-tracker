@@ -24,3 +24,7 @@ func (r *RedisClient) AddStream(ctx context.Context, videoID string) error {
 func (r *RedisClient) GetStreams(ctx context.Context) ([]string, error) {
 	return r.Client.SMembers(ctx, "streams:active").Result()
 }
+
+func (r *RedisClient) DeleteStream(ctx context.Context, videoID string) error {
+	return r.Client.SRem(ctx, "streams:active", videoID).Err()
+}
