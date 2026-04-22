@@ -83,9 +83,11 @@ func parseResponse(data youtubeResponse) ([]models.Stream, []models.Metric) {
 		})
 
 		metrics = append(metrics, models.Metric{
-			VideoID: item.ID,
-			Viewers: viewers,
-			Likes:   likes,
+			VideoID:      item.ID,
+			VideoTitle:   item.Snippet.Title,
+			ChannelTitle: item.Snippet.ChannelTitle,
+			Viewers:      viewers,
+			Likes:        likes,
 		})
 	}
 
