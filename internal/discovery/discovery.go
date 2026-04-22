@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/cache"
@@ -24,14 +26,29 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Printf("[INFO] error: %v", err)
+		}
+	}(resp.Body)
 
 	var data map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return err
 	}
 
-	items := data["items"].([]interface{})
+	itemsRaw, ok := data["items"]
+	if !ok || itemsRaw == nil {
+		// No hay items en respuesta; no es fatal
+		return nil
+	}
+
+	items, ok := itemsRaw.([]interface{})
+	if !ok {
+		return fmt.Errorf("unexpected type for items: %T", itemsRaw)
+	}
 
 	for _, item := range items {
 		videoID := item.(map[string]interface{})["id"].(map[string]interface{})["videoId"].(string)
