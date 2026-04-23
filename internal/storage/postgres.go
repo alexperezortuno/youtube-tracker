@@ -29,10 +29,12 @@ func (s *Store) SaveMetrics(ctx context.Context, metrics []models.Metric) error 
 	for _, m := range metrics {
 		_, err := s.DB.Exec(ctx,
 			`INSERT INTO livestream_metrics 
-				(time, video_id, viewers, likes)
-				VALUES ($1, $2, $3, $4)`,
+				(time, video_id, video_title, channel_title, viewers, likes)
+				VALUES ($1, $2, $3, $4, $5, $6)`,
 			time.Now(),
 			m.VideoID,
+			m.VideoTitle,
+			m.ChannelTitle,
 			m.Viewers,
 			m.Likes,
 		)

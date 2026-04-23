@@ -8,7 +8,9 @@ type Stream struct {
 }
 
 type Metric struct {
-	VideoID string
-	Viewers int
-	Likes   int
+	VideoID      string
+	ChannelTitle string
+	VideoTitle   string
+	Viewers      int
+	Likes        int
 }
