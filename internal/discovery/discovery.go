@@ -17,6 +17,7 @@ type Discovery struct {
 }
 
 func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error {
+	log.Printf("[INFO] discovering live streams for channel: %s", channelID)
 	url := fmt.Sprintf(
 		"https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=%s&eventType=live&type=video&key=%s",
 		channelID, d.APIKey,

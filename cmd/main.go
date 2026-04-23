@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/cache"
@@ -12,6 +13,11 @@ import (
 	"github.com/alexperezortuno/youtube-tracker/internal/lifecycle"
 	"github.com/alexperezortuno/youtube-tracker/internal/source"
 	"github.com/alexperezortuno/youtube-tracker/internal/storage"
+)
+
+var (
+	channelIDs []string
+	mu         sync.RWMutex
 )
 
 func main() {
@@ -31,10 +37,8 @@ func main() {
 		log.Fatal("missing POSTGRES_URL")
 	}
 
-	config.ValidateChannelIDs(cfg.ChannelIDs)
-
 	// INIT DEPENDENCIES
-
+	watcher := source.NewChannelWatcher(cfg.ChannelFilePath)
 	redisClient := cache.NewRedis(cfg.RedisAddr)
 	lifecycleManager := lifecycle.NewManager(redisClient, 3)
 
@@ -56,6 +60,7 @@ func main() {
 		log.Fatal("no channel IDs provided")
 	}
 
+	config.ValidateChannelIDs(cfg.ChannelIDs)
 	log.Printf("[INFO] loaded %d channel IDs", len(channelIDs))
 
 	// SERVICES
@@ -70,25 +75,47 @@ func main() {
 		5,
 	)
 
+	go func() {
+		for {
+			if watcher.HasChanged() {
+
+				newChannels := watcher.Reload()
+
+				if len(newChannels) == 0 {
+					log.Println("[WATCHER] ignored empty channel list")
+					time.Sleep(10 * time.Second)
+					continue
+				}
+
+				mu.Lock()
+				channelIDs = newChannels
+				mu.Unlock()
+
+				log.Printf("[WATCHER] updated channels: %d", len(channelIDs))
+			}
+
+			time.Sleep(10 * time.Second)
+		}
+	}()
+
 	// DISCOVERY WORKER
 	go func() {
 		for {
-			streams, _ := redisClient.GetStreams(ctx)
+			log.Println("[DISCOVERY] running...")
 
-			if len(streams) == 0 {
-				log.Println("[DISCOVERY] no active streams, running discovery")
+			mu.RLock()
+			currentChannels := make([]string, len(channelIDs))
+			copy(currentChannels, channelIDs)
+			mu.RUnlock()
 
-				for _, ch := range channelIDs {
-					err := discoverySvc.FindLiveStreams(ctx, ch)
-					if err != nil {
-						log.Printf("[ERROR] discovery failed: %v", err)
-					}
+			for _, ch := range currentChannels {
+				err := discoverySvc.FindLiveStreams(ctx, ch)
+				if err != nil {
+					log.Printf("[ERROR] discovery failed: %v", err)
 				}
-			} else {
-				log.Println("[DISCOVERY] skipping (streams already active)")
 			}
 
-			time.Sleep(10 * time.Minute)
+			time.Sleep(30 * time.Minute) // puedes ajustar
 		}
 	}()
 
@@ -104,13 +131,13 @@ func main() {
 			continue
 		}
 
+		log.Printf("[INFO] found %d active streams", len(streams))
+
 		if len(streams) == 0 {
 			log.Println("[INFO] no active streams found")
 			time.Sleep(40 * time.Second)
 			continue
 		}
-
-		log.Printf("[INFO] found %d active streams", len(streams))
 
 		streamsData, metrics, err := collectorSvc.Fetch(ctx, streams)
 		if err != nil {
