@@ -101,27 +101,21 @@ func main() {
 	// DISCOVERY WORKER
 	go func() {
 		for {
-			streams, _ := redisClient.GetStreams(ctx)
+			log.Println("[DISCOVERY] running...")
 
-			if len(streams) == 0 {
-				log.Println("[DISCOVERY] no active streams, running discovery")
+			mu.RLock()
+			currentChannels := make([]string, len(channelIDs))
+			copy(currentChannels, channelIDs)
+			mu.RUnlock()
 
-				mu.RLock()
-				currentChannels := make([]string, len(channelIDs))
-				copy(currentChannels, channelIDs)
-				mu.RUnlock()
-
-				for _, ch := range currentChannels {
-					err := discoverySvc.FindLiveStreams(ctx, ch)
-					if err != nil {
-						log.Printf("[ERROR] discovery failed: %v", err)
-					}
+			for _, ch := range currentChannels {
+				err := discoverySvc.FindLiveStreams(ctx, ch)
+				if err != nil {
+					log.Printf("[ERROR] discovery failed: %v", err)
 				}
-			} else {
-				log.Println("[DISCOVERY] skipping (streams already active)")
 			}
 
-			time.Sleep(10 * time.Minute)
+			time.Sleep(30 * time.Minute) // puedes ajustar
 		}
 	}()
 
