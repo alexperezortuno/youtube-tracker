@@ -45,7 +45,10 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 
 		// always read body to avoid leaks
 		bodyBytes, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		err = resp.Body.Close()
+		if err != nil {
+			return err
+		}
 
 		if readErr != nil {
 			d.KeyManager.MarkError(apiKey)
