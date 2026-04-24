@@ -1,12 +1,13 @@
 package config
 
 import (
+	"log"
 	"os"
 	"strings"
 )
 
 type Config struct {
-	YouTubeAPIKey   string
+	YouTubeAPIKeys  []string
 	RedisAddr       string
 	PostgresURL     string
 	ChannelIDs      []string
@@ -26,8 +27,14 @@ func Load() Config {
 		channelIDs = loadFromFile(channelFile)
 	}
 
+	keys := parseCSV(os.Getenv("YOUTUBE_API_KEYS"))
+
+	if len(keys) <= 0 {
+		log.Fatal("no YOUTUBE_API_KEYS provided")
+	}
+
 	return Config{
-		YouTubeAPIKey:   os.Getenv("YOUTUBE_API_KEY"),
+		YouTubeAPIKeys:  keys,
 		RedisAddr:       getEnv("REDIS_ADDR", "localhost:6379"),
 		PostgresURL:     getEnv("POSTGRES_URL", "postgres://user:pass@localhost:5432/metrics?sslmode=disable&options=--search_path=metrics_db"),
 		ChannelIDs:      channelIDs,
