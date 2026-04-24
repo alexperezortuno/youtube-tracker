@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/models"
+	"github.com/alexperezortuno/youtube-tracker/internal/youtube"
 )
 
 // CONFIG
@@ -24,7 +27,7 @@ const (
 // TYPES
 
 type Collector struct {
-	APIKey     string
+	KeyManager *youtube.KeyManager
 	HTTPClient *http.Client
 	Workers    int
 	RateLimit  <-chan time.Time // ticker channel
@@ -51,13 +54,13 @@ type youtubeResponse struct {
 
 // CONSTRUCTOR
 
-func NewCollector(apiKey string, rps int, workers int) *Collector {
+func NewCollector(apiKey *youtube.KeyManager, rps int, workers int) *Collector {
 	if workers <= 0 {
 		workers = defaultWorkers
 	}
 
 	return &Collector{
-		APIKey: apiKey,
+		KeyManager: apiKey,
 		HTTPClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
@@ -171,27 +174,81 @@ func (c *Collector) processBatchWithRetry(ctx context.Context, batch []string) (
 
 func (c *Collector) processBatch(ctx context.Context, videoIDs []string) ([]models.Stream, []models.Metric, error) {
 
-	url := fmt.Sprintf(
-		"https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails,statistics,snippet&id=%s&key=%s",
-		strings.Join(videoIDs, ","), c.APIKey,
-	)
+	maxTries := c.KeyManager.Count()
+	tries := 0
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	strURL := "https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails,statistics,snippet&id=%s&key=%s"
+	ids := strings.Join(videoIDs, ",")
 
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, nil, err
+	for {
+
+		apiKey := c.KeyManager.NextKey()
+
+		url := fmt.Sprintf(strURL, ids, apiKey)
+
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			c.KeyManager.MarkError(apiKey)
+			return nil, nil, err
+		}
+
+		// always read body to avoid leaks
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if readErr != nil {
+			c.KeyManager.MarkError(apiKey)
+			return nil, nil, readErr
+		}
+
+		// SUCCESS
+		if resp.StatusCode == http.StatusOK {
+
+			var data youtubeResponse
+			if err := json.Unmarshal(bodyBytes, &data); err != nil {
+				return nil, nil, err
+			}
+
+			c.KeyManager.MarkSuccess(apiKey)
+
+			streams, metrics := parseResponse(data)
+			return streams, metrics, nil
+		}
+
+		// HANDLE YOUTUBE ERROR
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == 429 {
+
+			// manage quotaExceeded
+			var errResp map[string]interface{}
+			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
+
+				if reason := extractReason(errResp); reason != "" {
+					log.Printf("[YOUTUBE ERROR] reason=%s", reason)
+
+					if reason == "quotaExceeded" {
+						c.KeyManager.MarkError(apiKey)
+					}
+				}
+			} else {
+				c.KeyManager.MarkError(apiKey)
+			}
+
+			tries++
+			if tries >= maxTries {
+				return nil, nil, fmt.Errorf("all API keys exhausted")
+			}
+
+			continue
+		}
+
+		// OTHER ERRORS
+		return nil, nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-	defer resp.Body.Close()
-
-	var data youtubeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, nil, err
-	}
-
-	streams, metrics := parseResponse(data)
-
-	return streams, metrics, nil
 }
 
 func (c *Collector) Fetch(ctx context.Context, videoIDs []string) ([]models.Stream, []models.Metric, error) {
@@ -254,4 +311,25 @@ func chunk(ids []string, size int) [][]string {
 	}
 
 	return chunks
+}
+
+func extractReason(errResp map[string]interface{}) string {
+
+	errorObj, ok := errResp["error"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	errorsArr, ok := errorObj["errors"].([]interface{})
+	if !ok || len(errorsArr) == 0 {
+		return ""
+	}
+
+	first, ok := errorsArr[0].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	reason, _ := first["reason"].(string)
+	return reason
 }
