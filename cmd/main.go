@@ -115,7 +115,7 @@ func main() {
 				}
 			}
 
-			time.Sleep(30 * time.Minute) // puedes ajustar
+			time.Sleep(50 * time.Minute) // puedes ajustar
 		}
 	}()
 
@@ -127,7 +127,7 @@ func main() {
 		streams, err := redisClient.GetStreams(ctx)
 		if err != nil {
 			log.Printf("[ERROR] redis get streams: %v", err)
-			time.Sleep(40 * time.Second)
+			time.Sleep(5 * time.Minute)
 			continue
 		}
 
@@ -135,20 +135,20 @@ func main() {
 
 		if len(streams) == 0 {
 			log.Println("[INFO] no active streams found")
-			time.Sleep(40 * time.Second)
+			time.Sleep(5 * time.Minute)
 			continue
 		}
 
 		streamsData, metrics, err := collectorSvc.Fetch(ctx, streams)
 		if err != nil {
 			log.Printf("[ERROR] collector error: %v", err)
-			time.Sleep(40 * time.Second)
+			time.Sleep(5 * time.Minute)
 			continue
 		}
 
 		if len(metrics) == 0 {
 			log.Println("[WARN] no metrics returned")
-			time.Sleep(40 * time.Second)
+			time.Sleep(5 * time.Minute)
 			continue
 		}
 
