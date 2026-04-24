@@ -13,6 +13,7 @@ import (
 	"github.com/alexperezortuno/youtube-tracker/internal/lifecycle"
 	"github.com/alexperezortuno/youtube-tracker/internal/source"
 	"github.com/alexperezortuno/youtube-tracker/internal/storage"
+	"github.com/alexperezortuno/youtube-tracker/internal/youtube"
 )
 
 var (
@@ -29,7 +30,7 @@ func main() {
 	// =========================
 	cfg := config.Load()
 
-	if cfg.YouTubeAPIKey == "" {
+	if len(cfg.YouTubeAPIKeys) == 0 {
 		log.Fatal("missing YOUTUBE_API_KEY")
 	}
 
@@ -41,6 +42,7 @@ func main() {
 	watcher := source.NewChannelWatcher(cfg.ChannelFilePath)
 	redisClient := cache.NewRedis(cfg.RedisAddr)
 	lifecycleManager := lifecycle.NewManager(redisClient, 3)
+	keyManager := youtube.NewKeyManager(cfg.YouTubeAPIKeys)
 
 	store, err := storage.NewStore(cfg.PostgresURL)
 	if err != nil {
@@ -65,12 +67,12 @@ func main() {
 
 	// SERVICES
 	discoverySvc := discovery.Discovery{
-		APIKey: cfg.YouTubeAPIKey,
-		Redis:  redisClient,
+		KeyManager: keyManager,
+		Redis:      redisClient,
 	}
 
 	collectorSvc := collector.NewCollector(
-		cfg.YouTubeAPIKey,
+		keyManager,
 		2,
 		5,
 	)
@@ -115,7 +117,7 @@ func main() {
 				}
 			}
 
-			time.Sleep(50 * time.Minute) // puedes ajustar
+			time.Sleep(50 * time.Minute)
 		}
 	}()
 
@@ -127,7 +129,7 @@ func main() {
 		streams, err := redisClient.GetStreams(ctx)
 		if err != nil {
 			log.Printf("[ERROR] redis get streams: %v", err)
-			time.Sleep(5 * time.Minute)
+			time.Sleep(3 * time.Minute)
 			continue
 		}
 
@@ -135,20 +137,20 @@ func main() {
 
 		if len(streams) == 0 {
 			log.Println("[INFO] no active streams found")
-			time.Sleep(5 * time.Minute)
+			time.Sleep(3 * time.Minute)
 			continue
 		}
 
 		streamsData, metrics, err := collectorSvc.Fetch(ctx, streams)
 		if err != nil {
 			log.Printf("[ERROR] collector error: %v", err)
-			time.Sleep(5 * time.Minute)
+			time.Sleep(3 * time.Minute)
 			continue
 		}
 
 		if len(metrics) == 0 {
 			log.Println("[WARN] no metrics returned")
-			time.Sleep(5 * time.Minute)
+			time.Sleep(3 * time.Minute)
 			continue
 		}
 
@@ -164,6 +166,6 @@ func main() {
 
 		log.Printf("[INFO] saved %d metrics", len(metrics))
 
-		time.Sleep(5 * time.Minute)
+		time.Sleep(3 * time.Minute)
 	}
 }
