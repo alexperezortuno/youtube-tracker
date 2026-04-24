@@ -117,7 +117,7 @@ func main() {
 				}
 			}
 
-			time.Sleep(50 * time.Minute) // puedes ajustar
+			time.Sleep(50 * time.Minute)
 		}
 	}()
 
