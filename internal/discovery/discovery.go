@@ -96,7 +96,7 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 		}
 
 		// HANDLE YOUTUBE ERROR
-		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == 429 {
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
 
 			var errResp map[string]interface{}
 			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {

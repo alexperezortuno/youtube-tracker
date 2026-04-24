@@ -221,7 +221,7 @@ func (c *Collector) processBatch(ctx context.Context, videoIDs []string) ([]mode
 		}
 
 		// HANDLE YOUTUBE ERROR
-		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == 429 {
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
 
 			// manage quotaExceeded
 			var errResp map[string]interface{}
@@ -295,7 +295,10 @@ func parseMetrics(data youtubeResponse) []models.Metric {
 
 func parseInt(s string) int {
 	var v int
-	fmt.Sscanf(s, "%d", &v)
+	_, err := fmt.Sscanf(s, "%d", &v)
+	if err != nil {
+		return 0
+	}
 	return v
 }
 
