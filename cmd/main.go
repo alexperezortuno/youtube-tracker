@@ -164,6 +164,6 @@ func main() {
 
 		log.Printf("[INFO] saved %d metrics", len(metrics))
 
-		time.Sleep(40 * time.Second)
+		time.Sleep(5 * time.Minute)
 	}
 }
