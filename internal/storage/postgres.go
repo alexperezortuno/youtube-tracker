@@ -81,3 +81,44 @@ func (d *DBSource) GetChannelIDs() ([]string, error) {
 
 	return result, nil
 }
+
+func (s *Store) SaveDailyStats(ctx context.Context, stats []models.VideoDailyStat) error {
+	for _, st := range stats {
+		_, err := s.DB.Exec(ctx,
+			`INSERT INTO video_daily_stats (date, video_id, views, likes)
+			 VALUES ($1, $2, $3, $4)
+			 ON CONFLICT (date, video_id)
+			 DO UPDATE SET
+			   views = EXCLUDED.views,
+			   likes = EXCLUDED.likes`,
+			st.Date,
+			st.VideoID,
+			st.Views,
+			st.Likes,
+		)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *Store) GetAllVideoIDs(ctx context.Context) ([]string, error) {
+	rows, err := s.DB.Query(ctx, "SELECT video_id FROM metrics_db.streams GROUP BY video_id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []string
+	for rows.Next() {
+		var id string
+		err := rows.Scan(&id)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, id)
+	}
+	return result, nil
+}

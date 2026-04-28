@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 type Stream struct {
 	VideoID      string
 	ChannelID    string
@@ -13,4 +15,11 @@ type Metric struct {
 	VideoTitle   string
 	Viewers      int
 	Likes        int
+}
+
+type VideoDailyStat struct {
+	VideoID string
+	Date    time.Time
+	Views   int64
+	Likes   int64
 }

@@ -44,6 +44,7 @@ type youtubeResponse struct {
 
 		Statistics struct {
 			LikeCount string `json:"likeCount"`
+			ViewCount string `json:"viewCount"`
 		} `json:"statistics"`
 
 		LiveStreamingDetails struct {
@@ -270,6 +271,104 @@ func (c *Collector) Fetch(ctx context.Context, videoIDs []string) ([]models.Stre
 	}
 
 	return allStreams, allMetrics, nil
+}
+
+func (c *Collector) FetchDaily(ctx context.Context, videoIDs []string) ([]models.Stream, []models.Metric, error) {
+
+	batches := chunk(videoIDs, maxBatchSize)
+
+	var allStreams []models.Stream
+	var allMetrics []models.Metric
+
+	for _, batch := range batches {
+
+		streams, metrics, err := c.processDailyBatch(ctx, batch)
+		if err != nil {
+			continue
+		}
+
+		allStreams = append(allStreams, streams...)
+		allMetrics = append(allMetrics, metrics...)
+	}
+
+	return allStreams, allMetrics, nil
+}
+
+func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([]models.Stream, []models.Metric, error) {
+	maxTries := c.KeyManager.Count()
+	tries := 0
+
+	strURL := "https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id=%s&key=%s"
+	ids := strings.Join(videoIDs, ",")
+
+	for {
+		apiKey := c.KeyManager.NextKey()
+
+		url := fmt.Sprintf(strURL, ids, apiKey)
+
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			c.KeyManager.MarkError(apiKey)
+			return nil, nil, err
+		}
+
+		// always read body to avoid leaks
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if readErr != nil {
+			c.KeyManager.MarkError(apiKey)
+			return nil, nil, readErr
+		}
+
+		// SUCCESS
+		if resp.StatusCode == http.StatusOK {
+
+			var data youtubeResponse
+			if err := json.Unmarshal(bodyBytes, &data); err != nil {
+				return nil, nil, err
+			}
+
+			c.KeyManager.MarkSuccess(apiKey)
+
+			streams, metrics := parseResponse(data)
+			return streams, metrics, nil
+		}
+
+		// HANDLE YOUTUBE ERROR
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+
+			// manage quotaExceeded
+			var errResp map[string]interface{}
+			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
+
+				if reason := extractReason(errResp); reason != "" {
+					log.Printf("[YOUTUBE ERROR] reason=%s", reason)
+
+					if reason == "quotaExceeded" {
+						c.KeyManager.MarkError(apiKey)
+					}
+				}
+			} else {
+				c.KeyManager.MarkError(apiKey)
+			}
+
+			tries++
+			if tries >= maxTries {
+				return nil, nil, fmt.Errorf("all API keys exhausted")
+			}
+
+			continue
+		}
+
+		// OTHER ERRORS
+		return nil, nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
 }
 
 // HELPERS
