@@ -32,12 +32,14 @@ func (d *DailyService) Run(ctx context.Context, videoIDs []string) error {
 
 	for _, m := range metrics {
 		stats = append(stats, models.VideoDailyStat{
-			VideoID:   m.VideoID,
-			Date:      now,
-			Views:     int64(m.Viewers),
-			Likes:     int64(m.Likes),
-			Comments:  m.Comments,
-			Favorites: m.Favorites,
+			VideoID:     m.VideoID,
+			Date:        now,
+			Views:       int64(m.Viewers),
+			Likes:       int64(m.Likes),
+			Comments:    m.Comments,
+			Favorites:   m.Favorites,
+			ChannelID:   m.ChannelID,
+			PublishedAt: m.PublishedAt,
 		})
 	}
 

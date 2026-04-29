@@ -17,13 +17,17 @@ type Metric struct {
 	Likes        int
 	Favorites    *int
 	Comments     *int
+	ChannelID    *string
+	PublishedAt  *string
 }
 
 type VideoDailyStat struct {
-	VideoID   string
-	Date      time.Time
-	Views     int64
-	Likes     int64
-	Favorites *int
-	Comments  *int
+	VideoID     string
+	Date        time.Time
+	Views       int64
+	Likes       int64
+	Favorites   *int
+	Comments    *int
+	ChannelID   *string
+	PublishedAt *string
 }

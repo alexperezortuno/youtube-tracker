@@ -40,6 +40,8 @@ type youtubeResponse struct {
 		Snippet struct {
 			Title        string `json:"title"`
 			ChannelTitle string `json:"channelTitle"`
+			PublishedAt  string `json:"publishedAt"`
+			ChannelID    string `json:"channelId"`
 		} `json:"snippet"`
 
 		Statistics struct {
@@ -116,6 +118,8 @@ func parseDailyResponse(data youtubeResponse) []models.Metric {
 			Likes:        likes,
 			Favorites:    new(parseInt(item.Statistics.FavoriteCount)),
 			Comments:     new(parseInt(item.Statistics.CommentCount)),
+			ChannelID:    new(item.Snippet.ChannelID),
+			PublishedAt:  new(item.Snippet.PublishedAt),
 		})
 	}
 

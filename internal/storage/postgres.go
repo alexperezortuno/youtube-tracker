@@ -85,20 +85,24 @@ func (d *DBSource) GetChannelIDs() ([]string, error) {
 func (s *Store) SaveDailyStats(ctx context.Context, stats []models.VideoDailyStat) error {
 	for _, st := range stats {
 		_, err := s.DB.Exec(ctx,
-			`INSERT INTO video_daily_stats (date, video_id, views, likes, favorites, comments)
-			 VALUES ($1, $2, $3, $4, $5, $6)
+			`INSERT INTO video_daily_stats (date, video_id, views, likes, favorites, comments, channel_id, published_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 			 ON CONFLICT (date, video_id)
 			 DO UPDATE SET
 			   views = EXCLUDED.views,
 			   likes = EXCLUDED.likes,
 			   favorites = EXCLUDED.favorites,
-			   comments = EXCLUDED.comments`,
+			   comments = EXCLUDED.comments,
+			   channel_id = EXCLUDED.channel_id,
+			   published_at = EXCLUDED.published_at`,
 			st.Date,
 			st.VideoID,
 			st.Views,
 			st.Likes,
 			st.Favorites,
 			st.Comments,
+			st.ChannelID,
+			st.PublishedAt,
 		)
 
 		if err != nil {
