@@ -43,8 +43,10 @@ type youtubeResponse struct {
 		} `json:"snippet"`
 
 		Statistics struct {
-			LikeCount string `json:"likeCount"`
-			ViewCount string `json:"viewCount"`
+			LikeCount     string `json:"likeCount"`
+			ViewCount     string `json:"viewCount"`
+			FavoriteCount string `json:"favoriteCount"`
+			CommentCount  string `json:"commentCount"`
 		} `json:"statistics"`
 
 		LiveStreamingDetails struct {
@@ -96,6 +98,28 @@ func parseResponse(data youtubeResponse) ([]models.Stream, []models.Metric) {
 	}
 
 	return streams, metrics
+}
+
+func parseDailyResponse(data youtubeResponse) []models.Metric {
+	var metrics []models.Metric
+
+	for _, item := range data.Items {
+
+		viewers := parseInt(item.Statistics.ViewCount)
+		likes := parseInt(item.Statistics.LikeCount)
+
+		metrics = append(metrics, models.Metric{
+			VideoID:      item.ID,
+			VideoTitle:   item.Snippet.Title,
+			ChannelTitle: item.Snippet.ChannelTitle,
+			Viewers:      viewers,
+			Likes:        likes,
+			Favorites:    new(parseInt(item.Statistics.FavoriteCount)),
+			Comments:     new(parseInt(item.Statistics.CommentCount)),
+		})
+	}
+
+	return metrics
 }
 
 // PUBLIC METHOD
@@ -273,28 +297,25 @@ func (c *Collector) Fetch(ctx context.Context, videoIDs []string) ([]models.Stre
 	return allStreams, allMetrics, nil
 }
 
-func (c *Collector) FetchDaily(ctx context.Context, videoIDs []string) ([]models.Stream, []models.Metric, error) {
+func (c *Collector) FetchDaily(ctx context.Context, videoIDs []string) ([]models.Metric, error) {
 
 	batches := chunk(videoIDs, maxBatchSize)
-
-	var allStreams []models.Stream
 	var allMetrics []models.Metric
 
 	for _, batch := range batches {
 
-		streams, metrics, err := c.processDailyBatch(ctx, batch)
+		metrics, err := c.processDailyBatch(ctx, batch)
 		if err != nil {
 			continue
 		}
 
-		allStreams = append(allStreams, streams...)
 		allMetrics = append(allMetrics, metrics...)
 	}
 
-	return allStreams, allMetrics, nil
+	return allMetrics, nil
 }
 
-func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([]models.Stream, []models.Metric, error) {
+func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([]models.Metric, error) {
 	maxTries := c.KeyManager.Count()
 	tries := 0
 
@@ -308,13 +329,13 @@ func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([
 
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
 		resp, err := c.HTTPClient.Do(req)
 		if err != nil {
 			c.KeyManager.MarkError(apiKey)
-			return nil, nil, err
+			return nil, err
 		}
 
 		// always read body to avoid leaks
@@ -323,7 +344,7 @@ func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([
 
 		if readErr != nil {
 			c.KeyManager.MarkError(apiKey)
-			return nil, nil, readErr
+			return nil, readErr
 		}
 
 		// SUCCESS
@@ -331,13 +352,13 @@ func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([
 
 			var data youtubeResponse
 			if err := json.Unmarshal(bodyBytes, &data); err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 
 			c.KeyManager.MarkSuccess(apiKey)
 
-			streams, metrics := parseResponse(data)
-			return streams, metrics, nil
+			metrics := parseDailyResponse(data)
+			return metrics, nil
 		}
 
 		// HANDLE YOUTUBE ERROR
@@ -360,14 +381,14 @@ func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([
 
 			tries++
 			if tries >= maxTries {
-				return nil, nil, fmt.Errorf("all API keys exhausted")
+				return nil, fmt.Errorf("all API keys exhausted")
 			}
 
 			continue
 		}
 
 		// OTHER ERRORS
-		return nil, nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 }
 

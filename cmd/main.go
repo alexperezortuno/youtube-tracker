@@ -186,7 +186,7 @@ func main() {
 			for {
 				log.Println("[DAILY] running daily snapshot")
 
-				videoIDs, _ := store.GetAllVideoIDs(ctx)
+				videoIDs, err := store.GetAllVideoIDs(ctx)
 				if err != nil {
 					log.Printf("[ERROR] daily postgres: %v", err)
 					time.Sleep(1 * time.Hour)
@@ -208,4 +208,6 @@ func main() {
 			}
 		}()
 	}
+
+	select {}
 }
