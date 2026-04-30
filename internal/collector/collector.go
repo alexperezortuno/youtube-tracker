@@ -40,10 +40,15 @@ type youtubeResponse struct {
 		Snippet struct {
 			Title        string `json:"title"`
 			ChannelTitle string `json:"channelTitle"`
+			PublishedAt  string `json:"publishedAt"`
+			ChannelID    string `json:"channelId"`
 		} `json:"snippet"`
 
 		Statistics struct {
-			LikeCount string `json:"likeCount"`
+			LikeCount     string `json:"likeCount"`
+			ViewCount     string `json:"viewCount"`
+			FavoriteCount string `json:"favoriteCount"`
+			CommentCount  string `json:"commentCount"`
 		} `json:"statistics"`
 
 		LiveStreamingDetails struct {
@@ -95,6 +100,30 @@ func parseResponse(data youtubeResponse) ([]models.Stream, []models.Metric) {
 	}
 
 	return streams, metrics
+}
+
+func parseDailyResponse(data youtubeResponse) []models.Metric {
+	var metrics []models.Metric
+
+	for _, item := range data.Items {
+
+		viewers := parseInt(item.Statistics.ViewCount)
+		likes := parseInt(item.Statistics.LikeCount)
+
+		metrics = append(metrics, models.Metric{
+			VideoID:      item.ID,
+			VideoTitle:   item.Snippet.Title,
+			ChannelTitle: item.Snippet.ChannelTitle,
+			Viewers:      viewers,
+			Likes:        likes,
+			Favorites:    new(parseInt(item.Statistics.FavoriteCount)),
+			Comments:     new(parseInt(item.Statistics.CommentCount)),
+			ChannelID:    new(item.Snippet.ChannelID),
+			PublishedAt:  new(item.Snippet.PublishedAt),
+		})
+	}
+
+	return metrics
 }
 
 // PUBLIC METHOD
@@ -270,6 +299,101 @@ func (c *Collector) Fetch(ctx context.Context, videoIDs []string) ([]models.Stre
 	}
 
 	return allStreams, allMetrics, nil
+}
+
+func (c *Collector) FetchDaily(ctx context.Context, videoIDs []string) ([]models.Metric, error) {
+
+	batches := chunk(videoIDs, maxBatchSize)
+	var allMetrics []models.Metric
+
+	for _, batch := range batches {
+
+		metrics, err := c.processDailyBatch(ctx, batch)
+		if err != nil {
+			continue
+		}
+
+		allMetrics = append(allMetrics, metrics...)
+	}
+
+	return allMetrics, nil
+}
+
+func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([]models.Metric, error) {
+	maxTries := c.KeyManager.Count()
+	tries := 0
+
+	strURL := "https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id=%s&key=%s"
+	ids := strings.Join(videoIDs, ",")
+
+	for {
+		apiKey := c.KeyManager.NextKey()
+
+		url := fmt.Sprintf(strURL, ids, apiKey)
+
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			c.KeyManager.MarkError(apiKey)
+			return nil, err
+		}
+
+		// always read body to avoid leaks
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if readErr != nil {
+			c.KeyManager.MarkError(apiKey)
+			return nil, readErr
+		}
+
+		// SUCCESS
+		if resp.StatusCode == http.StatusOK {
+
+			var data youtubeResponse
+			if err := json.Unmarshal(bodyBytes, &data); err != nil {
+				return nil, err
+			}
+
+			c.KeyManager.MarkSuccess(apiKey)
+
+			metrics := parseDailyResponse(data)
+			return metrics, nil
+		}
+
+		// HANDLE YOUTUBE ERROR
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+
+			// manage quotaExceeded
+			var errResp map[string]interface{}
+			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
+
+				if reason := extractReason(errResp); reason != "" {
+					log.Printf("[YOUTUBE ERROR] reason=%s", reason)
+
+					if reason == "quotaExceeded" {
+						c.KeyManager.MarkError(apiKey)
+					}
+				}
+			} else {
+				c.KeyManager.MarkError(apiKey)
+			}
+
+			tries++
+			if tries >= maxTries {
+				return nil, fmt.Errorf("all API keys exhausted")
+			}
+
+			continue
+		}
+
+		// OTHER ERRORS
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
 }
 
 // HELPERS
