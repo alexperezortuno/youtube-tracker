@@ -41,6 +41,11 @@ func main() {
 	// INIT DEPENDENCIES
 	watcher := source.NewChannelWatcher(cfg.ChannelFilePath)
 	redisClient := cache.NewRedis(cfg.RedisAddr)
+
+	if redisClient == nil {
+		panic("redis client is nil")
+	}
+
 	lifecycleManager := lifecycle.NewManager(redisClient, 3)
 	keyManager := youtube.NewKeyManager(cfg.YouTubeAPIKeys)
 
