@@ -7,7 +7,7 @@ services:
       - db
     mem_limit: 512m
     cpus: 1.0
-    command: ["-metrics=false", "-daily=true"]
+    command: ["-metrics=true", "-daily=false"]
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379

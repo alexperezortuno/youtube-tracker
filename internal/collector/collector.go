@@ -210,8 +210,13 @@ func (c *Collector) processBatch(ctx context.Context, videoIDs []string) ([]mode
 	ids := strings.Join(videoIDs, ",")
 
 	for {
+		<-c.RateLimit
 
-		apiKey := c.KeyManager.NextKey()
+		apiKey, err := c.KeyManager.NextKey()
+		if err != nil {
+			time.Sleep(time.Second)
+			continue
+		}
 
 		url := fmt.Sprintf(strURL, ids, apiKey)
 
@@ -222,16 +227,18 @@ func (c *Collector) processBatch(ctx context.Context, videoIDs []string) ([]mode
 
 		resp, err := c.HTTPClient.Do(req)
 		if err != nil {
-			c.KeyManager.MarkError(apiKey)
+			c.KeyManager.MarkError(apiKey, 0)
 			return nil, nil, err
 		}
+
+		c.KeyManager.Take(apiKey, 1, 1)
 
 		// always read body to avoid leaks
 		bodyBytes, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
 		if readErr != nil {
-			c.KeyManager.MarkError(apiKey)
+			c.KeyManager.MarkError(apiKey, 0)
 			return nil, nil, readErr
 		}
 
@@ -260,11 +267,11 @@ func (c *Collector) processBatch(ctx context.Context, videoIDs []string) ([]mode
 					log.Printf("[YOUTUBE ERROR] reason=%s", reason)
 
 					if reason == "quotaExceeded" {
-						c.KeyManager.MarkError(apiKey)
+						c.KeyManager.MarkError(apiKey, resp.StatusCode)
 					}
 				}
 			} else {
-				c.KeyManager.MarkError(apiKey)
+				c.KeyManager.MarkError(apiKey, resp.StatusCode)
 			}
 
 			tries++
@@ -327,7 +334,7 @@ func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([
 	ids := strings.Join(videoIDs, ",")
 
 	for {
-		apiKey := c.KeyManager.NextKey()
+		apiKey, _ := c.KeyManager.NextKey()
 
 		url := fmt.Sprintf(strURL, ids, apiKey)
 
@@ -338,7 +345,7 @@ func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([
 
 		resp, err := c.HTTPClient.Do(req)
 		if err != nil {
-			c.KeyManager.MarkError(apiKey)
+			c.KeyManager.MarkError(apiKey, 0)
 			return nil, err
 		}
 
@@ -347,7 +354,7 @@ func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([
 		resp.Body.Close()
 
 		if readErr != nil {
-			c.KeyManager.MarkError(apiKey)
+			c.KeyManager.MarkError(apiKey, 0)
 			return nil, readErr
 		}
 
@@ -376,11 +383,11 @@ func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([
 					log.Printf("[YOUTUBE ERROR] reason=%s", reason)
 
 					if reason == "quotaExceeded" {
-						c.KeyManager.MarkError(apiKey)
+						c.KeyManager.MarkError(apiKey, 403)
 					}
 				}
 			} else {
-				c.KeyManager.MarkError(apiKey)
+				c.KeyManager.MarkError(apiKey, resp.StatusCode)
 			}
 
 			tries++

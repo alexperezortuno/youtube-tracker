@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/cache"
 	"github.com/alexperezortuno/youtube-tracker/internal/youtube"
@@ -27,8 +28,11 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 	tries := 0
 
 	for {
-
-		apiKey := d.KeyManager.NextKey()
+		apiKey, err := d.KeyManager.NextKey()
+		if err != nil {
+			time.Sleep(time.Second)
+			continue
+		}
 
 		url := fmt.Sprintf(strURL, channelID, apiKey)
 
@@ -39,7 +43,7 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			d.KeyManager.MarkError(apiKey)
+			d.KeyManager.MarkError(apiKey, 0)
 			return err
 		}
 
@@ -51,7 +55,7 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 		}
 
 		if readErr != nil {
-			d.KeyManager.MarkError(apiKey)
+			d.KeyManager.MarkError(apiKey, 0)
 			return readErr
 		}
 
@@ -108,10 +112,10 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 				log.Printf("[YOUTUBE ERROR] reason=%s", reason)
 
 				if reason == "quotaExceeded" || reason == "dailyLimitExceeded" {
-					d.KeyManager.MarkError(apiKey)
+					d.KeyManager.MarkError(apiKey, 403)
 				}
 			} else {
-				d.KeyManager.MarkError(apiKey)
+				d.KeyManager.MarkError(apiKey, resp.StatusCode)
 			}
 
 			tries++

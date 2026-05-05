@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
+	"log/slog"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/cache"
@@ -23,30 +26,59 @@ var (
 	mu            sync.RWMutex
 	enableMetrics = flag.Bool("metrics", true, "enable streaming metrics collector")
 	enableDaily   = flag.Bool("daily", false, "enable daily snapshot collector")
+	logLevel      = flag.String("log-level", "info", "log level: debug, info, warn, error")
 )
+
+func setupLogger(level string) *slog.Logger {
+	var lvl slog.Level
+	switch level {
+	case "debug":
+		lvl = slog.LevelDebug
+	case "info":
+		lvl = slog.LevelInfo
+	case "warn":
+		lvl = slog.LevelWarn
+	case "error":
+		lvl = slog.LevelError
+	default:
+		lvl = slog.LevelInfo
+	}
+
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: lvl,
+	}))
+}
 
 func main() {
 	flag.Parse()
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// =========================
-	// LOAD CONFIG
-	// =========================
+	logger := setupLogger(*logLevel)
+	slog.SetDefault(logger)
+
+	if os.Getenv("LOG_LEVEL") != "" {
+		logger = setupLogger(os.Getenv("LOG_LEVEL"))
+		slog.SetDefault(logger)
+	}
+
 	cfg := config.Load()
 
 	if len(cfg.YouTubeAPIKeys) == 0 {
-		log.Fatal("missing YOUTUBE_API_KEY")
+		logger.Error("missing required config: YOUTUBE_API_KEY")
+		os.Exit(1)
 	}
 
 	if cfg.PostgresURL == "" {
-		log.Fatal("missing POSTGRES_URL")
+		logger.Error("missing required config: POSTGRES_URL")
+		os.Exit(1)
 	}
 
-	// INIT DEPENDENCIES
 	watcher := source.NewChannelWatcher(cfg.ChannelFilePath)
 	redisClient := cache.NewRedis(cfg.RedisAddr)
 
 	if redisClient == nil {
+		logger.Error("redis client initialization failed", "addr", cfg.RedisAddr)
 		panic("redis client is nil")
 	}
 
@@ -55,7 +87,8 @@ func main() {
 
 	store, err := storage.NewStore(cfg.PostgresURL)
 	if err != nil {
-		log.Fatalf("error connecting to db: %v", err)
+		logger.Error("database connection failed", "error", err)
+		os.Exit(1)
 	}
 
 	src := &source.StaticSource{
@@ -64,17 +97,18 @@ func main() {
 
 	channelIDs, err := src.GetChannelIDs()
 	if err != nil {
-		log.Fatalf("error getting channel ids: %v", err)
+		logger.Error("failed to get channel IDs", "error", err)
+		os.Exit(1)
 	}
 
 	if len(channelIDs) == 0 {
-		log.Fatal("no channel IDs provided")
+		logger.Error("no channel IDs provided")
+		os.Exit(1)
 	}
 
 	config.ValidateChannelIDs(cfg.ChannelIDs)
-	log.Printf("[INFO] loaded %d channel IDs", len(channelIDs))
+	logger.Info("configuration loaded", "channels", len(channelIDs), "redis", cfg.RedisAddr)
 
-	// SERVICES
 	discoverySvc := discovery.Discovery{
 		KeyManager: keyManager,
 		Redis:      redisClient,
@@ -91,15 +125,16 @@ func main() {
 		Store:     store,
 	}
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
 	if *enableMetrics {
 		go func() {
 			for {
 				if watcher.HasChanged() {
-
 					newChannels := watcher.Reload()
-
 					if len(newChannels) == 0 {
-						log.Println("[WATCHER] ignored empty channel list")
+						logger.Warn("watcher ignored empty channel list")
 						time.Sleep(10 * time.Second)
 						continue
 					}
@@ -108,17 +143,15 @@ func main() {
 					channelIDs = newChannels
 					mu.Unlock()
 
-					log.Printf("[WATCHER] updated channels: %d", len(channelIDs))
+					logger.Info("channels updated", "count", len(channelIDs))
 				}
-
 				time.Sleep(10 * time.Second)
 			}
 		}()
 
-		// DISCOVERY WORKER
 		go func() {
 			for {
-				log.Println("[DISCOVERY] running...")
+				logger.Debug("discovery cycle started")
 
 				mu.RLock()
 				currentChannels := make([]string, len(channelIDs))
@@ -128,43 +161,50 @@ func main() {
 				for _, ch := range currentChannels {
 					err := discoverySvc.FindLiveStreams(ctx, ch)
 					if err != nil {
-						log.Printf("[ERROR] discovery failed: %v", err)
+						logger.Error("discovery failed", "channel", ch, "error", err)
 					}
 				}
 
+				logger.Info("discovery cycle completed", "channels", len(currentChannels))
 				time.Sleep(50 * time.Minute)
 			}
 		}()
 
-		// METRICS LOOP
 		for {
-			log.Println("====================================")
-			log.Println("[INFO] metrics cycle")
+			select {
+			case <-sigChan:
+				logger.Info("shutdown signal received, stopping metrics loop")
+				cancel()
+				return
+			default:
+			}
+
+			logger.Info("metrics cycle starting")
 
 			streams, err := redisClient.GetStreams(ctx)
 			if err != nil {
-				log.Printf("[ERROR] redis get streams: %v", err)
+				logger.Error("redis get streams failed", "error", err)
 				time.Sleep(3 * time.Minute)
 				continue
 			}
 
-			log.Printf("[INFO] found %d active streams", len(streams))
+			logger.Info("active streams found", "count", len(streams))
 
 			if len(streams) == 0 {
-				log.Println("[INFO] no active streams found")
+				logger.Info("no active streams, waiting")
 				time.Sleep(3 * time.Minute)
 				continue
 			}
 
 			streamsData, metrics, err := collectorSvc.Fetch(ctx, streams)
 			if err != nil {
-				log.Printf("[ERROR] collector error: %v", err)
+				logger.Error("collector fetch failed", "error", err)
 				time.Sleep(3 * time.Minute)
 				continue
 			}
 
 			if len(metrics) == 0 {
-				log.Println("[WARN] no metrics returned")
+				logger.Warn("no metrics collected")
 				time.Sleep(3 * time.Minute)
 				continue
 			}
@@ -172,47 +212,49 @@ func main() {
 			lifecycleManager.Process(ctx, streams, metrics)
 
 			if err := store.SaveStreams(ctx, streamsData); err != nil {
-				log.Printf("[ERROR] saving streams: %v", err)
+				logger.Error("save streams failed", "error", err)
 			}
 
 			if err := store.SaveMetrics(ctx, metrics); err != nil {
-				log.Printf("[ERROR] saving metrics: %v", err)
+				logger.Error("save metrics failed", "error", err)
 			}
 
-			log.Printf("[INFO] saved %d metrics", len(metrics))
+			logger.Info("metrics cycle completed", "metrics", len(metrics), "streams", len(streamsData))
 
 			time.Sleep(3 * time.Minute)
 		}
 	}
 
 	if *enableDaily {
-		// DAILY CHECK
 		go func() {
 			for {
-				log.Println("[DAILY] running daily snapshot")
+				logger.Info("daily snapshot starting")
 
 				videoIDs, err := store.GetAllVideoIDs(ctx)
 				if err != nil {
-					log.Printf("[ERROR] daily postgres: %v", err)
+					logger.Error("daily get video IDs failed", "error", err)
 					time.Sleep(1 * time.Hour)
 					continue
 				}
 
 				if len(videoIDs) == 0 {
-					log.Println("[DAILY] no streams to process")
+					logger.Info("no videos to process")
 					time.Sleep(1 * time.Hour)
 					continue
 				}
 
 				err = dailyService.Run(ctx, videoIDs)
 				if err != nil {
-					log.Printf("[ERROR] daily service: %v", err)
+					logger.Error("daily service failed", "error", err)
 				}
 
+				logger.Info("daily snapshot completed", "videos", len(videoIDs))
 				time.Sleep(24 * time.Hour)
 			}
 		}()
 	}
 
-	select {}
+	<-sigChan
+	logger.Info("shutdown signal received")
+	cancel()
 }
