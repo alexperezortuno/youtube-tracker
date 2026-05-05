@@ -2,7 +2,7 @@ package source
 
 import (
 	"bufio"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -11,18 +11,27 @@ import (
 type ChannelWatcher struct {
 	FilePath    string
 	LastModTime time.Time
+	Logger      *slog.Logger
 }
 
 func NewChannelWatcher(path string) *ChannelWatcher {
+	return NewChannelWatcherWithLogger(path, nil)
+}
+
+func NewChannelWatcherWithLogger(path string, logger *slog.Logger) *ChannelWatcher {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &ChannelWatcher{
 		FilePath: path,
+		Logger:   logger,
 	}
 }
 
 func (w *ChannelWatcher) HasChanged() bool {
 	info, err := os.Stat(w.FilePath)
 	if err != nil {
-		log.Printf("[WATCHER] error reading file: %v", err)
+		w.Logger.Error("error reading file", "error", err)
 		return false
 	}
 
@@ -44,7 +53,7 @@ func (w *ChannelWatcher) HasChanged() bool {
 func (w *ChannelWatcher) Reload() []string {
 	file, err := os.Open(w.FilePath)
 	if err != nil {
-		log.Printf("[WATCHER] error reading file: %v", err)
+		w.Logger.Error("error reading file", "error", err)
 		return nil
 	}
 	defer file.Close()

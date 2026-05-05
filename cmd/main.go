@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"log/slog"
 	"os"
 	"os/signal"
 	"sync"
@@ -16,6 +15,7 @@ import (
 	"github.com/alexperezortuno/youtube-tracker/internal/daily"
 	"github.com/alexperezortuno/youtube-tracker/internal/discovery"
 	"github.com/alexperezortuno/youtube-tracker/internal/lifecycle"
+	log "github.com/alexperezortuno/youtube-tracker/internal/logger"
 	"github.com/alexperezortuno/youtube-tracker/internal/source"
 	"github.com/alexperezortuno/youtube-tracker/internal/storage"
 	"github.com/alexperezortuno/youtube-tracker/internal/youtube"
@@ -29,38 +29,12 @@ var (
 	logLevel      = flag.String("log-level", "info", "log level: debug, info, warn, error")
 )
 
-func setupLogger(level string) *slog.Logger {
-	var lvl slog.Level
-	switch level {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "info":
-		lvl = slog.LevelInfo
-	case "warn":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	default:
-		lvl = slog.LevelInfo
-	}
-
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: lvl,
-	}))
-}
-
 func main() {
 	flag.Parse()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	logger := setupLogger(*logLevel)
-	slog.SetDefault(logger)
-
-	if os.Getenv("LOG_LEVEL") != "" {
-		logger = setupLogger(os.Getenv("LOG_LEVEL"))
-		slog.SetDefault(logger)
-	}
+	logger := log.Init(os.Stdout, *logLevel)
 
 	cfg := config.Load()
 
@@ -74,7 +48,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	watcher := source.NewChannelWatcher(cfg.ChannelFilePath)
+	watcher := source.NewChannelWatcherWithLogger(cfg.ChannelFilePath, logger)
 	redisClient := cache.NewRedis(cfg.RedisAddr)
 
 	if redisClient == nil {
@@ -82,8 +56,8 @@ func main() {
 		panic("redis client is nil")
 	}
 
-	lifecycleManager := lifecycle.NewManager(redisClient, 3)
-	keyManager := youtube.NewKeyManager(cfg.YouTubeAPIKeys)
+	lifecycleManager := lifecycle.NewManagerWithLogger(redisClient, 3, logger)
+	keyManager := youtube.NewKeyManagerWithConfig(cfg.YouTubeAPIKeys, 10, 50, logger)
 
 	store, err := storage.NewStore(cfg.PostgresURL)
 	if err != nil {
@@ -109,15 +83,13 @@ func main() {
 	config.ValidateChannelIDs(cfg.ChannelIDs)
 	logger.Info("configuration loaded", "channels", len(channelIDs), "redis", cfg.RedisAddr)
 
-	discoverySvc := discovery.Discovery{
-		KeyManager: keyManager,
-		Redis:      redisClient,
-	}
+	discoverySvc := discovery.NewDiscoveryWithLogger(keyManager, redisClient, logger)
 
-	collectorSvc := collector.NewCollector(
+	collectorSvc := collector.NewCollectorWithLogger(
 		keyManager,
 		2,
 		5,
+		logger,
 	)
 
 	dailyService := &daily.DailyService{

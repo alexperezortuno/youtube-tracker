@@ -2,7 +2,7 @@ package lifecycle
 
 import (
 	"context"
-	"log"
+	"log/slog"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/cache"
 	"github.com/alexperezortuno/youtube-tracker/internal/models"
@@ -11,12 +11,21 @@ import (
 type Manager struct {
 	Redis         *cache.RedisClient
 	MaxDeadCycles int
+	Logger        *slog.Logger
 }
 
 func NewManager(redis *cache.RedisClient, maxDead int) *Manager {
+	return NewManagerWithLogger(redis, maxDead, nil)
+}
+
+func NewManagerWithLogger(redis *cache.RedisClient, maxDead int, logger *slog.Logger) *Manager {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Manager{
 		Redis:         redis,
 		MaxDeadCycles: maxDead,
+		Logger:        logger,
 	}
 }
 
@@ -37,23 +46,22 @@ func (m *Manager) Process(ctx context.Context, activeIDs []string, metrics []mod
 		count, _ := m.Redis.IncrementDeadCounter(ctx, videoID)
 
 		if int(count) >= m.MaxDeadCycles {
-			log.Printf("[LIFECYCLE] removing dead stream (0 viewers): %s", videoID)
+			m.Logger.Info("removing dead stream", "video_id", videoID)
 			_ = m.Redis.RemoveStream(ctx, videoID)
 			_ = m.Redis.ResetDeadCounter(ctx, videoID)
 		}
 	}
 
-	// 🔥 NUEVO: detectar streams que desaparecieron
 	for _, id := range activeIDs {
 
 		if _, exists := activeMap[id]; !exists {
 
 			count, _ := m.Redis.IncrementDeadCounter(ctx, id)
 
-			log.Printf("[LIFECYCLE] missing stream %s (count %d)", id, count)
+			m.Logger.Warn("stream missing", "video_id", id, "count", count)
 
 			if int(count) >= m.MaxDeadCycles {
-				log.Printf("[LIFECYCLE] removing missing stream: %s", id)
+				m.Logger.Info("removing missing stream", "video_id", id)
 				_ = m.Redis.RemoveStream(ctx, id)
 				_ = m.Redis.ResetDeadCounter(ctx, id)
 			}
