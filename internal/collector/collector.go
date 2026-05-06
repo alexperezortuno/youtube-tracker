@@ -268,10 +268,7 @@ func (c *Collector) processBatch(ctx context.Context, videoIDs []string) ([]mode
 			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
 
 				if reason := extractReason(errResp); reason != "" {
-					logger.Warn("YouTube API error",
-						"reason", reason,
-						"status", resp.StatusCode,
-					)
+					logger.Warn("YouTube API error | reason %s | status %d", reason, resp.StatusCode)
 
 					if reason == "quotaExceeded" {
 						c.KeyManager.MarkError(apiKey, resp.StatusCode)
@@ -387,10 +384,7 @@ func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([
 			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
 
 				if reason := extractReason(errResp); reason != "" {
-					logger.Warn("YouTube API error",
-						"reason", reason,
-						"status", resp.StatusCode,
-					)
+					logger.Warn("YouTube API error | reason %s | status %d", reason, resp.StatusCode)
 
 					if reason == "quotaExceeded" {
 						c.KeyManager.MarkError(apiKey, 403)

@@ -120,10 +120,7 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
 
 				reason := extractReason(errResp)
-				logger.Warn("YouTube API error",
-					"reason", reason,
-					"status", resp.StatusCode,
-				)
+				logger.Warn("YouTube API error | reason %s | status %d", reason, resp.StatusCode)
 
 				if reason == "quotaExceeded" || reason == "dailyLimitExceeded" {
 					d.KeyManager.MarkError(apiKey, 403)
