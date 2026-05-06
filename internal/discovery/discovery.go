@@ -5,38 +5,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/cache"
+	"github.com/alexperezortuno/youtube-tracker/internal/logger"
 	"github.com/alexperezortuno/youtube-tracker/internal/youtube"
 )
 
 type Discovery struct {
 	KeyManager *youtube.KeyManager
 	Redis      *cache.RedisClient
-	Logger     *slog.Logger
 }
 
 func NewDiscovery(km *youtube.KeyManager, rc *cache.RedisClient) *Discovery {
-	return NewDiscoveryWithLogger(km, rc, nil)
+	return NewDiscoveryWithLogger(km, rc)
 }
 
-func NewDiscoveryWithLogger(km *youtube.KeyManager, rc *cache.RedisClient, logger *slog.Logger) *Discovery {
-	if logger == nil {
-		logger = slog.Default()
-	}
+func NewDiscoveryWithLogger(km *youtube.KeyManager, rc *cache.RedisClient) *Discovery {
 	return &Discovery{
 		KeyManager: km,
 		Redis:      rc,
-		Logger:     logger,
 	}
 }
 
 func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error {
 
-	d.Logger.Debug("discovery started", "channel_id", channelID)
+	logger.Debug("discovery started channel_id %s", channelID)
 
 	strURL := "https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=%s&eventType=live&type=video&key=%s"
 
@@ -125,7 +120,7 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
 
 				reason := extractReason(errResp)
-				d.Logger.Warn("YouTube API error",
+				logger.Warn("YouTube API error",
 					"reason", reason,
 					"status", resp.StatusCode,
 				)

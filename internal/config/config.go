@@ -2,9 +2,10 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"strings"
+
+	"github.com/alexperezortuno/youtube-tracker/internal/logger"
 )
 
 type Config struct {
@@ -31,7 +32,7 @@ func Load() Config {
 	keys := parseCSV(os.Getenv("YOUTUBE_API_KEYS"))
 
 	if len(keys) <= 0 {
-		log.Fatal("no YOUTUBE_API_KEYS provided")
+		logger.Error("no YOUTUBE_API_KEYS provided")
 	}
 
 	redisHost := getEnv("REDIS_HOST", "localhost")
@@ -48,7 +49,7 @@ func Load() Config {
 	)
 
 	urlRedis := fmt.Sprintf("%s:%s", redisHost, redisPort)
-	log.Println("Redis URL:", urlRedis)
+	logger.Debug("Redis URL: %s", urlRedis)
 
 	return Config{
 		YouTubeAPIKeys:  keys,

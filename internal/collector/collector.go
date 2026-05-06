@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
-	logger2 "github.com/alexperezortuno/youtube-tracker/internal/logger"
+	"github.com/alexperezortuno/youtube-tracker/internal/logger"
 	"github.com/alexperezortuno/youtube-tracker/internal/models"
 	"github.com/alexperezortuno/youtube-tracker/internal/youtube"
 )
@@ -31,7 +30,6 @@ type Collector struct {
 	KeyManager *youtube.KeyManager
 	HTTPClient *http.Client
 	Workers    int
-	Logger     *slog.Logger
 	RateLimit  <-chan time.Time // ticker channel
 }
 
@@ -62,16 +60,12 @@ type youtubeResponse struct {
 // CONSTRUCTOR
 
 func NewCollector(apiKey *youtube.KeyManager, rps int, workers int) *Collector {
-	return NewCollectorWithLogger(apiKey, rps, workers, nil)
+	return NewCollectorWithLogger(apiKey, rps, workers)
 }
 
-func NewCollectorWithLogger(apiKey *youtube.KeyManager, rps int, workers int, logger *slog.Logger) *Collector {
+func NewCollectorWithLogger(apiKey *youtube.KeyManager, rps int, workers int) *Collector {
 	if workers <= 0 {
 		workers = defaultWorkers
-	}
-
-	if logger == nil {
-		logger = logger2.Default()
 	}
 
 	return &Collector{
@@ -80,7 +74,6 @@ func NewCollectorWithLogger(apiKey *youtube.KeyManager, rps int, workers int, lo
 			Timeout: 5 * time.Second,
 		},
 		Workers:   workers,
-		Logger:    logger,
 		RateLimit: time.Tick(time.Second / time.Duration(rps)),
 	}
 }
@@ -275,7 +268,7 @@ func (c *Collector) processBatch(ctx context.Context, videoIDs []string) ([]mode
 			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
 
 				if reason := extractReason(errResp); reason != "" {
-					c.Logger.Warn("YouTube API error",
+					logger.Warn("YouTube API error",
 						"reason", reason,
 						"status", resp.StatusCode,
 					)
@@ -394,7 +387,7 @@ func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([
 			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
 
 				if reason := extractReason(errResp); reason != "" {
-					c.Logger.Warn("YouTube API error",
+					logger.Warn("YouTube API error",
 						"reason", reason,
 						"status", resp.StatusCode,
 					)
