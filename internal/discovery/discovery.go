@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
+	"time"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/cache"
+	"github.com/alexperezortuno/youtube-tracker/internal/logger"
 	"github.com/alexperezortuno/youtube-tracker/internal/youtube"
 )
 
@@ -17,9 +18,20 @@ type Discovery struct {
 	Redis      *cache.RedisClient
 }
 
+func NewDiscovery(km *youtube.KeyManager, rc *cache.RedisClient) *Discovery {
+	return NewDiscoveryWithLogger(km, rc)
+}
+
+func NewDiscoveryWithLogger(km *youtube.KeyManager, rc *cache.RedisClient) *Discovery {
+	return &Discovery{
+		KeyManager: km,
+		Redis:      rc,
+	}
+}
+
 func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error {
 
-	log.Printf("[DISCOVERY] channel=%s", channelID)
+	logger.Debug("discovery started channel_id %s", channelID)
 
 	strURL := "https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=%s&eventType=live&type=video&key=%s"
 
@@ -27,8 +39,11 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 	tries := 0
 
 	for {
-
-		apiKey := d.KeyManager.NextKey()
+		apiKey, err := d.KeyManager.NextKey()
+		if err != nil {
+			time.Sleep(time.Second)
+			continue
+		}
 
 		url := fmt.Sprintf(strURL, channelID, apiKey)
 
@@ -39,16 +54,19 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			d.KeyManager.MarkError(apiKey)
+			d.KeyManager.MarkError(apiKey, 0)
 			return err
 		}
 
 		// always read body to avoid leaks
 		bodyBytes, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		err = resp.Body.Close()
+		if err != nil {
+			return err
+		}
 
 		if readErr != nil {
-			d.KeyManager.MarkError(apiKey)
+			d.KeyManager.MarkError(apiKey, 0)
 			return readErr
 		}
 
@@ -96,19 +114,22 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 		}
 
 		// HANDLE YOUTUBE ERROR
-		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == 429 {
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
 
 			var errResp map[string]interface{}
 			if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
 
 				reason := extractReason(errResp)
-				log.Printf("[YOUTUBE ERROR] reason=%s", reason)
+				logger.Warn("YouTube API error",
+					"reason", reason,
+					"status", resp.StatusCode,
+				)
 
 				if reason == "quotaExceeded" || reason == "dailyLimitExceeded" {
-					d.KeyManager.MarkError(apiKey)
+					d.KeyManager.MarkError(apiKey, 403)
 				}
 			} else {
-				d.KeyManager.MarkError(apiKey)
+				d.KeyManager.MarkError(apiKey, resp.StatusCode)
 			}
 
 			tries++

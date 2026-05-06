@@ -1,9 +1,32 @@
 services:
+  app:
+    build: .
+    container_name: yt-app
+    depends_on:
+      - redis
+      - db
+    mem_limit: 512m
+    cpus: 1.0
+    command: ["discover", "--interval", "600"]
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=user
+      - DB_PASSWORD=pass
+      - DB_NAME=metrics_db
+      - YOUTUBE_API_KEYS=${YOUTUBE_API_KEYS}
+    networks:
+      - yt-network
+
   redis:
     image: redis:7
     container_name: yt-redis
     ports:
       - "6379:6379"
+    networks:
+      - yt-network
 
   db:
     image: timescale/timescaledb:latest-pg14
@@ -16,6 +39,8 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    networks:
+      - yt-network
 
   grafana:
     image: grafana/grafana:latest
@@ -29,7 +54,13 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - grafana_data:/var/lib/grafana
+    networks:
+      - yt-network
 
 volumes:
   db_data:
   grafana_data:
+
+networks:
+  yt-network:
+    driver: bridge

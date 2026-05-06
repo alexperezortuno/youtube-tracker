@@ -1,4 +1,3 @@
-
 ifneq (,$(wildcard .env))
 	include .env
 	export
@@ -7,94 +6,119 @@ endif
 APP_NAME := youtube-tracker
 GO := go
 
-CMD := ./cmd/main.go
-
+CMD := ./main.go
 BINARY := bin/$(APP_NAME)
 
-ENV_FILE := .env
+# FLAGS (puedes sobreescribir)
+LOG_LEVEL ?= info
 
-# PHONY TARGETS
+# =========================
+# PHONY
+# =========================
+.PHONY: help build run discover metrics daily clean test tidy fmt lint docker-up docker-down logs
 
-.PHONY: help build run dev clean test tidy fmt lint docker-up docker-down logs db-init
 
-
+# =========================
 # HELP
+# =========================
 help:
 	@echo "Available commands:"
-	@echo "  make build         - Build binary"
-	@echo "  make run           - Run app"
-	@echo "  make dev           - Run with auto-reload (air)"
-	@echo "  make clean         - Clean binaries"
-	@echo "  make test          - Run tests"
-	@echo "  make tidy          - go mod tidy"
-	@echo "  make fmt           - Format code"
-	@echo "  make lint          - Run linter"
-	@echo "  make docker-up     - Start infra (redis + db)"
-	@echo "  make docker-down   - Stop infra"
-	@echo "  make logs          - Tail docker logs"
-	@echo "  make db-init       - Init DB schema"
+	@echo "  make build"
+	@echo "  make run CMD='discover --interval=60'"
+	@echo "  make discover"
+	@echo "  make metrics"
+	@echo "  make daily"
+	@echo "  make docker-up"
+	@echo "  make docker-down"
 
 
+# =========================
 # BUILD
+# =========================
 build:
-	@echo "Building optimized binary..."
+	@echo "Building binary..."
 	@mkdir -p bin
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 	$(GO) build -ldflags="-s -w" -o $(BINARY) $(CMD)
 
 
-# RUN
+# =========================
+# RUN GENÉRICO
+# =========================
 run:
-	@echo "Running..."
-	$(GO) run $(CMD)
+	@echo "Running $(CMD)..."
+	$(GO) run $(CMD) $(CMD_ARGS)
 
 
-# DEV (HOT RELOAD)
+# =========================
+# SUBCOMMANDS
+# =========================
+
+discover:
+	@echo "Running discovery..."
+	$(GO) run $(CMD) discover --log-level=$(LOG_LEVEL)
+
+metrics:
+	@echo "Running metrics..."
+	$(GO) run $(CMD) metrics --log-level=$(LOG_LEVEL)
+
+daily:
+	@echo "Running daily..."
+	$(GO) run $(CMD) daily --log-level=$(LOG_LEVEL)
+
+
+# =========================
+# BINARY EXEC
+# =========================
+
+run-bin:
+	@echo "Running binary..."
+	$(BINARY) $(CMD_ARGS)
+
+
+# =========================
+# DEV
+# =========================
 dev:
-	@echo "Running in dev mode (air)..."
+	@echo "Running dev..."
 	air
 
 
+# =========================
 # CLEAN
+# =========================
 clean:
-	@echo "Cleaning..."
 	rm -rf bin
 
 
+# =========================
 # TEST
+# =========================
 test:
-	@echo "Running tests..."
 	$(GO) test ./... -v
 
 
-# DEPENDENCIES
+# =========================
+# TOOLS
+# =========================
 tidy:
-	@echo "Tidying modules..."
 	$(GO) mod tidy
 
 fmt:
-	@echo "Formatting..."
 	$(GO) fmt ./...
 
 lint:
-	@echo "Linting..."
 	golangci-lint run
 
 
-# DOCKER INFRA
+# =========================
+# DOCKER
+# =========================
 docker-up:
-	@echo "Starting docker services..."
-	docker-compose up -d
+	docker compose up -d
 
 docker-down:
-	@echo "Stopping docker services..."
-	docker-compose down
+	docker compose down
 
 logs:
-	docker-compose logs -f
-
-
-# DB INIT
-db-init:
-	@echo "Initializing database..."
-	docker exec -i youtube-tracker-db-1 psql -U user -d metrics < scripts/init.sql
+	docker compose logs -f

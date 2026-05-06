@@ -1,9 +1,11 @@
 package config
 
 import (
-	"log"
+	"fmt"
 	"os"
 	"strings"
+
+	"github.com/alexperezortuno/youtube-tracker/internal/logger"
 )
 
 type Config struct {
@@ -30,13 +32,29 @@ func Load() Config {
 	keys := parseCSV(os.Getenv("YOUTUBE_API_KEYS"))
 
 	if len(keys) <= 0 {
-		log.Fatal("no YOUTUBE_API_KEYS provided")
+		logger.Error("no YOUTUBE_API_KEYS provided")
 	}
+
+	redisHost := getEnv("REDIS_HOST", "localhost")
+	redisPort := getEnv("REDIS_PORT", "6379")
+	dbHost := getEnv("DB_HOST", "localhost")
+	dbPort := getEnv("DB_PORT", "5432")
+	dbUser := getEnv("DB_USER", "user")
+	dbPass := getEnv("DB_PASSWORD", "pass")
+	dbName := getEnv("DB_NAME", "metrics_db")
+
+	urlDb := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/metrics?sslmode=disable&options=--search_path=%s",
+		dbUser, dbPass, dbHost, dbPort, dbName,
+	)
+
+	urlRedis := fmt.Sprintf("%s:%s", redisHost, redisPort)
+	logger.Debug("Redis URL: %s", urlRedis)
 
 	return Config{
 		YouTubeAPIKeys:  keys,
-		RedisAddr:       getEnv("REDIS_ADDR", "localhost:6379"),
-		PostgresURL:     getEnv("POSTGRES_URL", "postgres://user:pass@localhost:5432/metrics?sslmode=disable&options=--search_path=metrics_db"),
+		RedisAddr:       getEnv("REDIS_ADDR", urlRedis),
+		PostgresURL:     getEnv("POSTGRES_URL", urlDb),
 		ChannelIDs:      channelIDs,
 		ChannelFilePath: channelFile,
 	}

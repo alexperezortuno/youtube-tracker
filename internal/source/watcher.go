@@ -2,10 +2,11 @@ package source
 
 import (
 	"bufio"
-	"log"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/alexperezortuno/youtube-tracker/internal/logger"
 )
 
 type ChannelWatcher struct {
@@ -14,6 +15,10 @@ type ChannelWatcher struct {
 }
 
 func NewChannelWatcher(path string) *ChannelWatcher {
+	return NewChannelWatcherWithLogger(path)
+}
+
+func NewChannelWatcherWithLogger(path string) *ChannelWatcher {
 	return &ChannelWatcher{
 		FilePath: path,
 	}
@@ -22,7 +27,7 @@ func NewChannelWatcher(path string) *ChannelWatcher {
 func (w *ChannelWatcher) HasChanged() bool {
 	info, err := os.Stat(w.FilePath)
 	if err != nil {
-		log.Printf("[WATCHER] error reading file: %v", err)
+		logger.Error("error reading file error: %v", err)
 		return false
 	}
 
@@ -44,7 +49,7 @@ func (w *ChannelWatcher) HasChanged() bool {
 func (w *ChannelWatcher) Reload() []string {
 	file, err := os.Open(w.FilePath)
 	if err != nil {
-		log.Printf("[WATCHER] error reading file: %v", err)
+		logger.Error("error reading file error: %v", err)
 		return nil
 	}
 	defer file.Close()
