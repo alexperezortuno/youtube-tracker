@@ -7,7 +7,7 @@ services:
       - db
     mem_limit: 512m
     cpus: 1.0
-    command: ["-metrics=true", "-daily=false"]
+    command: ["discover", "--interval", "600"]
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -23,6 +23,8 @@ services:
   redis:
     image: redis:7
     container_name: yt-redis
+    ports:
+      - "6379:6379"
     networks:
       - yt-network
 
@@ -33,6 +35,8 @@ services:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: pass
       POSTGRES_DB: metrics
+    ports:
+      - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     networks:

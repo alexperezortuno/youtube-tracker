@@ -1,45 +1,60 @@
 package logger
 
 import (
-	"io"
-	"log/slog"
+	"log"
 	"os"
-	"sync"
+	"strings"
 )
 
-var (
-	defaultLogger *slog.Logger
-	defaultOnce   sync.Once
-	defaultLevel  = slog.LevelInfo
-	loggerKey     = "youtube-tracker/logger"
+type Level int
+
+const (
+	DEBUG Level = iota
+	INFO
+	WARN
+	ERROR
 )
 
-func Init(w io.Writer, level string) *slog.Logger {
-	var lvl slog.Level
-	switch level {
+var currentLevel = INFO
+
+func Init(level string) {
+	switch strings.ToLower(level) {
 	case "debug":
-		lvl = slog.LevelDebug
+		currentLevel = DEBUG
 	case "info":
-		lvl = slog.LevelInfo
+		currentLevel = INFO
 	case "warn":
-		lvl = slog.LevelWarn
+		currentLevel = WARN
 	case "error":
-		lvl = slog.LevelError
+		currentLevel = ERROR
 	default:
-		lvl = slog.LevelInfo
+		currentLevel = INFO
 	}
 
-	logger := slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: lvl}))
-	slog.SetDefault(logger)
-	defaultLogger = logger
-	defaultLevel = lvl
-
-	return logger
+	log.SetOutput(os.Stdout)
+	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 }
 
-func Default() *slog.Logger {
-	defaultOnce.Do(func() {
-		defaultLogger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: defaultLevel}))
-	})
-	return defaultLogger
+func Debug(msg string, args ...any) {
+	if currentLevel <= DEBUG {
+		log.Printf("[DEBUG] "+msg, args...)
+	}
+}
+
+func Info(msg string, args ...any) {
+	if currentLevel <= INFO {
+		log.Printf("[INFO] "+msg, args...)
+	}
+}
+
+func Warn(msg string, args ...any) {
+	if currentLevel <= WARN {
+		log.Printf("[WARN] "+msg, args...)
+	}
+}
+
+func Error(msg string, args ...any) {
+	if currentLevel <= ERROR {
+		log.Printf("[ERROR] "+msg, args...)
+	}
 }
