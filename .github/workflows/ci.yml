@@ -36,6 +36,12 @@ jobs:
             exit 1
           fi
 
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Tidy modules
+        run: go mod tidy
+
       - name: Vet
         run: go vet ./...
 
