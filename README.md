@@ -36,7 +36,10 @@ It is built to run continuous discovery and metric collection cycles, and it als
 ```text
 youtube-tracker/ 
     ├── cmd/ 
-    │ └── main.go 
+    │ ├── daily.go
+    │ ├── discover.go
+    │ ├── metrics.go
+    │ └── root.go 
     ├── internal/ 
     │ ├── cache/ 
     │ ├── collector/ 
@@ -52,6 +55,7 @@ youtube-tracker/
     ├── docker-compose.yml 
     ├── Makefile 
     ├── go.mod 
+    ├── main.go 
     └── README.md
 ```
 
@@ -182,3 +186,20 @@ make db-init
 
 ---
 
+## Discover Streams in channels
+
+```bash
+./bin/app discover --interval 30 --log-level=debug
+```
+
+## Get stream metrics
+
+```bash
+./bin/app metrics --interval 60 --log-level=debug
+```
+
+## Get daily metrics
+
+```bash
+./bin/app daily --interval 12 --log-level=debug
+```
