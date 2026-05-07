@@ -361,7 +361,10 @@ func (c *Collector) processDailyBatch(ctx context.Context, videoIDs []string) ([
 
 		// always read body to avoid leaks
 		bodyBytes, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		err = resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
 
 		if readErr != nil {
 			c.KeyManager.MarkError(apiKey, 0)
