@@ -206,8 +206,9 @@ make db-init
 
 ### Install via Curl
 
-```bash
-curl -sSL https://raw.githubusercontent.com/alexperezortuno/youtube-tracker/scripts/install.sh | bash
-```
+On linux:
 
+```bash
+curl -sSL https://raw.githubusercontent.com/alexperezortuno/youtube-tracker/master/scripts/install.sh | bash
+```
 
