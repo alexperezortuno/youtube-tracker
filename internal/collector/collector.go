@@ -235,11 +235,17 @@ func (c *Collector) processBatch(ctx context.Context, videoIDs []string) ([]mode
 			return nil, nil, err
 		}
 
-		c.KeyManager.Take(apiKey, 1, 1)
+		err = c.KeyManager.Take(apiKey, 1, 1)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		// always read body to avoid leaks
 		bodyBytes, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		err = resp.Body.Close()
+		if err != nil {
+			return nil, nil, err
+		}
 
 		if readErr != nil {
 			c.KeyManager.MarkError(apiKey, 0)
