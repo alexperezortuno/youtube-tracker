@@ -203,3 +203,11 @@ make db-init
 ```bash
 ./bin/app daily --interval 12 --log-level=debug
 ```
+
+### Install via Curl
+
+```bash
+curl -sSL https://raw.githubusercontent.com/alexperezortuno/youtube-tracker/scripts/install.sh | bash
+```
+
+
