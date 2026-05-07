@@ -33,6 +33,16 @@ jobs:
             ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
 
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Format check
+        run: |
+          if [ -n "$(go fmt ./...)" ]; then
+            echo "Code is not formatted"
+            exit 1
+          fi
+
       - name: Build
         run: |
           mkdir -p dist
@@ -44,6 +54,12 @@ jobs:
           GOARCH=${{ matrix.goarch }} \
           go build -ldflags="-s -w" \
           -o dist/youtube-tracker-${{ matrix.goos }}-${{ matrix.goarch }}$EXT .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.goos }}
+          path: dist/*
 
       - name: Upload release
         if: startsWith(github.ref, 'refs/tags/')
