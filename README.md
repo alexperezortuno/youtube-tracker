@@ -211,3 +211,4 @@ On linux:
 ```bash
 curl -sSL https://raw.githubusercontent.com/alexperezortuno/youtube-tracker/master/scripts/install.sh | bash
 ```
+
