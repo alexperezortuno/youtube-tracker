@@ -33,7 +33,7 @@ chmod +x "$BINARY$EXT"
 if [ "$OS" = "windows" ]; then
   echo "Move $BINARY.exe to a folder in your PATH manually"
 else
-  #sudo mv "$BINARY" /usr/local/bin/$BINARY
+  sudo mv "$BINARY" /usr/local/bin/$BINARY
   echo "Installed to /usr/local/bin/$BINARY"
 fi
 
