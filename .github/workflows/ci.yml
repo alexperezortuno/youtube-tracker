@@ -34,7 +34,6 @@ jobs:
           go build -ldflags="-s -w" \
           -o dist/youtube-tracker-${{ matrix.goos }}-${{ matrix.goarch }}$EXT .
 
-      # 🔥 sube artifacts intermedios
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
