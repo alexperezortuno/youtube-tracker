@@ -3,15 +3,27 @@ package discovery
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/cache"
 	"github.com/alexperezortuno/youtube-tracker/internal/logger"
 	"github.com/alexperezortuno/youtube-tracker/internal/youtube"
 )
+
+type youtubeRSSFeed struct {
+	Entries []youtubeRSSEntry `xml:"entry"`
+}
+
+type youtubeRSSEntry struct {
+	VideoID string `xml:"http://www.youtube.com/xml/schemas/2015 videoId"`
+	Title   string `xml:"title"`
+	PubDate string `xml:"published"`
+}
 
 type Discovery struct {
 	KeyManager *youtube.KeyManager
@@ -29,7 +41,7 @@ func NewDiscoveryWithLogger(km *youtube.KeyManager, rc *cache.RedisClient) *Disc
 	}
 }
 
-func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error {
+func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string, discoverInterval int) error {
 
 	logger.Debug("discovery started channel_id %s", channelID)
 
@@ -107,7 +119,7 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 					continue
 				}
 
-				_ = d.Redis.AddStream(ctx, videoID)
+				_ = d.Redis.AddStream(ctx, videoID, discoverInterval)
 			}
 
 			return nil
@@ -140,6 +152,91 @@ func (d *Discovery) FindLiveStreams(ctx context.Context, channelID string) error
 		// OTHER ERRORS
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
+}
+
+func (d *Discovery) FindLiveStreamsByRSS(ctx context.Context, channelID string, discoverInterval int) error {
+	logger.Debug("rss discovery started channel_id %s", channelID)
+
+	videoIDs, err := d.fetchRecentVideoIDsFromRSS(ctx, channelID, discoverInterval)
+	if err != nil {
+		return err
+	}
+
+	if len(videoIDs) == 0 {
+		return nil
+	}
+
+	for _, videoID := range videoIDs {
+		_ = d.Redis.AddStream(ctx, videoID, discoverInterval)
+	}
+
+	return nil
+}
+
+func (d *Discovery) fetchRecentVideoIDsFromRSS(ctx context.Context, channelID string, discoverInterval int) ([]string, error) {
+	url := fmt.Sprintf("https://www.youtube.com/feeds/videos.xml?channel_id=%s", channelID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	bodyBytes, readErr := io.ReadAll(resp.Body)
+	closeErr := resp.Body.Close()
+	if closeErr != nil {
+		return nil, closeErr
+	}
+
+	if readErr != nil {
+		return nil, readErr
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected RSS status code: %d", resp.StatusCode)
+	}
+
+	var feed youtubeRSSFeed
+	if err := xml.Unmarshal(bodyBytes, &feed); err != nil {
+		return nil, err
+	}
+
+	videoIDs := make([]string, 0, len(feed.Entries))
+	seen := make(map[string]struct{}, len(feed.Entries))
+
+	for _, entry := range feed.Entries {
+		videoID := strings.TrimSpace(entry.VideoID)
+		if videoID == "" {
+			continue
+		}
+
+		if _, exists := seen[videoID]; exists {
+			continue
+		}
+
+		pubDate, err := time.Parse(time.RFC3339, entry.PubDate)
+		if err != nil {
+			logger.Warn("invalid pubDate format for video %s: %v", videoID, err)
+			continue
+		}
+
+		if time.Since(pubDate) > time.Duration(discoverInterval+60)*time.Minute {
+			continue
+		}
+
+		seen[videoID] = struct{}{}
+		videoIDs = append(videoIDs, videoID)
+	}
+
+	return videoIDs, nil
 }
 
 func extractReason(errResp map[string]interface{}) string {

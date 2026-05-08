@@ -18,10 +18,10 @@ func NewRedis(addr string) *RedisClient {
 	return &RedisClient{Client: rdb}
 }
 
-func (r *RedisClient) AddStream(ctx context.Context, videoID string) error {
+func (r *RedisClient) AddStream(ctx context.Context, videoID string, discoverInterval int) error {
 	err := r.Client.SAdd(ctx, "streams:active", videoID).Err()
 	if err == nil {
-		r.Client.Expire(ctx, "streams:active", 20*time.Minute)
+		r.Client.Expire(ctx, "streams:active", time.Duration(discoverInterval-1)*time.Minute)
 	}
 	return err
 }
