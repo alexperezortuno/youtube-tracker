@@ -35,7 +35,9 @@ var discoverCmd = &cobra.Command{
 			logger.Info("[DISCOVER] running...")
 
 			for _, ch := range cfg.ChannelIDs {
-				err := discoverySvc.FindLiveStreams(ctx, ch)
+				// This query is too expensive, so we use the RSS feed instead
+				// err := discoverySvc.FindLiveStreams(ctx, ch)
+				err := discoverySvc.FindLiveStreamsByRSS(ctx, ch, discoverInterval)
 				if err != nil {
 					logger.Error("[ERROR] %v", err)
 				}
