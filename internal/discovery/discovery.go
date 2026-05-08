@@ -182,7 +182,7 @@ func (d *Discovery) fetchRecentVideoIDsFromRSS(ctx context.Context, channelID st
 	}
 
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: 20 * time.Second,
 	}
 
 	resp, err := client.Do(req)
