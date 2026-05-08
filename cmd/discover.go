@@ -14,6 +14,8 @@ import (
 )
 
 var discoverInterval int
+var discoverByRSS bool
+var discoverByAPI bool
 
 var discoverCmd = &cobra.Command{
 	Use:   "discover",
@@ -35,14 +37,20 @@ var discoverCmd = &cobra.Command{
 			logger.Info("[DISCOVER] running...")
 
 			for _, ch := range cfg.ChannelIDs {
-				// This query is too expensive, so we use the RSS feed instead
-				// err := discoverySvc.FindLiveStreams(ctx, ch)
-				err := discoverySvc.FindLiveStreamsByRSS(ctx, ch, discoverInterval)
-				if err != nil {
-					logger.Error("[ERROR] %v", err)
+				if discoverByAPI {
+					err := discoverySvc.FindLiveStreams(ctx, ch, discoverInterval)
+					if err != nil {
+						logger.Error("error discovering streams: %v", err)
+					}
+				}
+				if discoverByRSS {
+					err := discoverySvc.FindLiveStreamsByRSS(ctx, ch, discoverInterval)
+					if err != nil {
+						logger.Error("error discovering streams: %v", err)
+					}
 				}
 			}
-
+			logger.Debug("[DISCOVER] sleeping for %d minutes", discoverInterval)
 			time.Sleep(time.Duration(discoverInterval) * time.Minute)
 		}
 	},
@@ -50,4 +58,6 @@ var discoverCmd = &cobra.Command{
 
 func init() {
 	discoverCmd.Flags().IntVar(&discoverInterval, "interval", 30, "minutes between discovery runs")
+	discoverCmd.Flags().BoolVar(&discoverByRSS, "rss", false, "use RSS feed for discovery")
+	discoverCmd.Flags().BoolVar(&discoverByAPI, "api", false, "use YouTube API for discovery")
 }
