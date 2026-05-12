@@ -12,7 +12,9 @@ import (
 
 	"github.com/alexperezortuno/youtube-tracker/internal/cache"
 	"github.com/alexperezortuno/youtube-tracker/internal/logger"
+	"github.com/alexperezortuno/youtube-tracker/internal/models"
 	"github.com/alexperezortuno/youtube-tracker/internal/youtube"
+	"github.com/go-rod/rod"
 )
 
 type youtubeRSSFeed struct {
@@ -239,6 +241,16 @@ func (d *Discovery) fetchRecentVideoIDsFromRSS(ctx context.Context, channelID st
 	return videoIDs, nil
 }
 
+func (d *Discovery) SaveLiveStreamsByExtractor(ctx context.Context, results []models.Result, discoverInterval int) error {
+	logger.Debug("extractor discovery started channel_ids %v", results)
+
+	// Save ids in Redis
+	for _, result := range results {
+		_ = d.Redis.AddStream(ctx, result.VideoID, discoverInterval)
+	}
+	return nil
+}
+
 func extractReason(errResp map[string]interface{}) string {
 
 	errorObj, ok := errResp["error"].(map[string]interface{})
@@ -258,4 +270,107 @@ func extractReason(errResp map[string]interface{}) string {
 
 	reason, _ := first["reason"].(string)
 	return reason
+}
+
+func (d *Discovery) GetLiveVideoID(page *rod.Page, channelIdentifier string) (*models.Result, error) {
+	// Build URL
+	var url string
+	if strings.HasPrefix(channelIdentifier, "http") {
+		url = channelIdentifier
+	} else if strings.HasPrefix(channelIdentifier, "@") {
+		url = fmt.Sprintf("https://www.youtube.com/%s", channelIdentifier)
+	} else {
+		url = fmt.Sprintf("https://www.youtube.com/channel/%s", channelIdentifier)
+	}
+
+	fmt.Printf("Searching: %s\n", url)
+
+	// Navigate to page
+	if err := page.Navigate(url); err != nil {
+		return nil, fmt.Errorf("error navigating: %w", err)
+	}
+
+	// Wait for initial load
+	if err := page.WaitLoad(); err != nil {
+		if strings.Contains(err.Error(), "Execution context was destroyed") {
+			logger.Warn("context destroyed waiting for initial load for %s, continue: %v", channelIdentifier, err)
+		} else {
+			return nil, fmt.Errorf("error waiting load: %w", err)
+		}
+	}
+
+	time.Sleep(3 * time.Second)
+
+	// Scroll to load more videos
+	if _, err := page.Eval(`() => window.scrollBy(0, 600)`); err != nil {
+		if strings.Contains(err.Error(), "Execution context was destroyed") {
+			logger.Warn("context destroyed waiting for initial load for %s, continue: %v", channelIdentifier, err)
+		} else {
+			return nil, fmt.Errorf("error scrolling: %w", err)
+		}
+	}
+
+	time.Sleep(2 * time.Second)
+
+	// Correct method with Eval()
+	result, err := page.Eval(`() => {
+            // Search all load classes .ytBadgeShapeText
+            const badges = document.querySelectorAll('.ytBadgeShapeText');
+            for (let badge of badges) {
+                if (badge.textContent.trim().toUpperCase() === 'EN VIVO' || badge.textContent.trim().toUpperCase() === 'LIVE') {
+                    // Upload to parent link
+                    let parent = badge.closest('a[href*="/watch?v="]');
+                    if (parent) {
+                        const match = parent.href.match(/watch\?v=([^&]+)/);
+                        if (match) return match[1];
+                    }
+                }
+            }
+            return '';
+        }`)
+
+	if err != nil {
+		if strings.Contains(err.Error(), "Execution context was destroyed") {
+			logger.Warn("destroyed context evaluating live video for %s: %v", channelIdentifier, err)
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("error evaluating live video: %w", err)
+	}
+
+	// Convert result to string
+	videoID := result.Value.String()
+	if videoID != "" && videoID != "<nil>" {
+		return &models.Result{
+			Channel: channelIdentifier,
+			VideoID: videoID,
+			URL:     fmt.Sprintf("https://youtube.com/watch?v=%s", videoID),
+		}, nil
+	}
+
+	return nil, nil
+}
+
+func extractVideoID(url string) string {
+	// Buscar watch?v= en la URL
+	if idx := strings.Index(url, "watch?v="); idx != -1 {
+		start := idx + 8
+		end := strings.Index(url[start:], "&")
+		if end == -1 {
+			end = len(url[start:])
+		}
+		return url[start : start+end]
+	}
+
+	// Buscar /live/ o /shorts/
+	if idx := strings.Index(url, "/live/"); idx != -1 {
+		start := idx + 6
+		end := strings.Index(url[start:], "?")
+		if end == -1 {
+			end = len(url[start:])
+		}
+		return url[start : start+end]
+	}
+
+	return ""
 }
