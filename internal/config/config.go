@@ -13,6 +13,7 @@ type Config struct {
 	RedisAddr       string
 	PostgresURL     string
 	ChannelIDs      []string
+	ChannelNames    []string
 	ChannelFilePath string
 }
 
@@ -20,13 +21,16 @@ func Load() Config {
 
 	channelIDsEnv := os.Getenv("YOUTUBE_CHANNEL_IDS")
 	channelFile := getEnv("YOUTUBE_CHANNEL_FILE", "channels.txt")
+	channelFileNames := getEnv("YOUTUBE_CHANNEL_FILE_NAMES", "channel_names.txt")
 
 	var channelIDs []string
+	var channelNames []string
 
 	if channelIDsEnv != "" {
 		channelIDs = parseCSV(channelIDsEnv)
 	} else {
 		channelIDs = loadFromFile(channelFile)
+		channelNames = loadFromFile(channelFileNames)
 	}
 
 	keys := parseCSV(os.Getenv("YOUTUBE_API_KEYS"))
@@ -57,6 +61,7 @@ func Load() Config {
 		PostgresURL:     getEnv("POSTGRES_URL", urlDb),
 		ChannelIDs:      channelIDs,
 		ChannelFilePath: channelFile,
+		ChannelNames:    channelNames,
 	}
 }
 

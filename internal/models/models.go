@@ -31,3 +31,9 @@ type VideoDailyStat struct {
 	ChannelID   *string
 	PublishedAt *string
 }
+
+type Result struct {
+	Channel string
+	VideoID string
+	URL     string
+}

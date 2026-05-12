@@ -152,14 +152,10 @@ make db-init
 ## Get Channel ID
 
 ```bash
-(source .env && curl \
+source .env && curl \
   "https://youtube.googleapis.com/youtube/v3/channels?part=id&forUsername=${CHANNEL_NAME}&key=${YOUTUBE_API_KEY}" \
   --header "Accept: application/json" \
-  --compressed)"
-```
-
-```bash
-(source .env && echo "curl https://www.googleapis.com/youtube/v3/channels?part=id&forUsername=${CHANNEL_NAME}&key=${YOUTUBE_API_KEY} --header 'Accept: application/json' --compressed")
+  --compressed
 ```
 
 ---
