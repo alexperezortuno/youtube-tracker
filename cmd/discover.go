@@ -57,7 +57,10 @@ var discoverCmd = &cobra.Command{
 					// Configure launcher to use headless mode
 					l := launcher.New().
 						Headless(true).
-						Set("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+						NoSandbox(true).
+						Set("disable-dev-shm-usage").
+						Set("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36").
+						MustLaunch()
 
 					// Launch browser
 					browser := rod.New().ControlURL(l.MustLaunch()).MustConnect()
