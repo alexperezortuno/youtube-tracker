@@ -31,7 +31,7 @@ HOSTNAME=$(hostname)
 
 ARCHIVE="${BACKUP_DIR}/logs_${HOSTNAME}_${TIMESTAMP}.tar.gz"
 
-REMOTE_USER="alex"
+REMOTE_USER="user"
 REMOTE_HOST="10.0.0.10"
 REMOTE_PATH="/data/youtube-tracker/logs"
 
