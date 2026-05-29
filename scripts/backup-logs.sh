@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Backup script to archive the logs/ directory and optionally send it to a remote server using rsync
+# Usage:
+#   ./backup-logs.sh [--rsync] [--clean]
+#   --rsync: send the backup to a remote server using rsync
+#   --clean: clean the logs/ directory after creating the backup
+
 set -euo pipefail
 
 LOG_DIR="./logs"
