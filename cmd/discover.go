@@ -5,17 +5,19 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/alexperezortuno/youtube-tracker/internal/logger"
-	"github.com/alexperezortuno/youtube-tracker/internal/models"
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
-	"github.com/go-rod/stealth"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/cache"
 	"github.com/alexperezortuno/youtube-tracker/internal/config"
 	"github.com/alexperezortuno/youtube-tracker/internal/discovery"
+	"github.com/alexperezortuno/youtube-tracker/internal/logger"
+	"github.com/alexperezortuno/youtube-tracker/internal/models"
+	"github.com/alexperezortuno/youtube-tracker/internal/storage"
 	"github.com/alexperezortuno/youtube-tracker/internal/youtube"
+	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/launcher"
+	"github.com/go-rod/stealth"
 )
 
 var (
@@ -36,6 +38,15 @@ var discoverCmd = &cobra.Command{
 		keyManager := youtube.NewKeyManager(cfg.YouTubeAPIKeys)
 		redisClient := cache.NewRedis(cfg.RedisAddr)
 
+		pool, err := pgxpool.New(ctx, cfg.PostgresURL)
+		if err != nil {
+			logger.Error("failed to connect to database: %v", err)
+			return
+		}
+		defer pool.Close()
+
+		dbSource := storage.NewDBSource(pool)
+
 		discoverySvc := discovery.Discovery{
 			KeyManager: keyManager,
 			Redis:      redisClient,
@@ -54,37 +65,42 @@ var discoverCmd = &cobra.Command{
 						}
 					}()
 
-					// Configure launcher to use headless mode
 					l := launcher.New().
 						Headless(true).
 						NoSandbox(true).
 						Set("disable-dev-shm-usage").
 						Set("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
-					// Launch browser
 					browser := rod.New().ControlURL(l.MustLaunch()).MustConnect()
 					defer browser.MustClose()
 
+					channels, err := dbSource.GetChannels(true)
+					if err != nil {
+						logger.Error("failed to get channels from database: %v", err)
+						return
+					}
+
 					var results []models.Result
 
-					for _, ch := range cfg.ChannelNames {
+					for _, ch := range channels {
 						page := stealth.MustPage(browser)
 
-						result, err := discoverySvc.GetLiveVideoID(page, ch)
+						result, err := discoverySvc.GetLiveVideoID(page, ch.Name)
 						if closeErr := page.Close(); closeErr != nil {
 							logger.Error("error closing page: %v", closeErr)
 						}
 
 						if err != nil {
-							logger.Error("error discovering streams: %v", err)
+							logger.Error("error discovering streams for channel %s: %v", ch.Name, err)
 							continue
 						}
 
 						if result != nil {
+							result.Channel = ch.ID
 							results = append(results, *result)
 							logger.Info("[DISCOVER] found live stream: %s", result.VideoID)
 						} else {
-							logger.Info("[DISCOVER] no live stream found for %s", ch)
+							logger.Info("[DISCOVER] no live stream found for %s", ch.Name)
 						}
 					}
 
@@ -98,17 +114,22 @@ var discoverCmd = &cobra.Command{
 				}()
 			}
 
-			for _, ch := range cfg.ChannelIDs {
-				if discoverByAPI {
-					err := discoverySvc.FindLiveStreams(ctx, ch, discoverInterval)
-					if err != nil {
-						logger.Error("error discovering streams: %v", err)
+			channelIDs, err := dbSource.GetChannelIDs()
+			if err != nil {
+				logger.Error("failed to get channel IDs: %v", err)
+			} else {
+				for _, chID := range channelIDs {
+					if discoverByAPI {
+						err := discoverySvc.FindLiveStreams(ctx, chID, discoverInterval)
+						if err != nil {
+							logger.Error("error discovering streams: %v", err)
+						}
 					}
-				}
-				if discoverByRSS {
-					err := discoverySvc.FindLiveStreamsByRSS(ctx, ch, discoverInterval)
-					if err != nil {
-						logger.Error("error discovering streams: %v", err)
+					if discoverByRSS {
+						err := discoverySvc.FindLiveStreamsByRSS(ctx, chID, discoverInterval)
+						if err != nil {
+							logger.Error("error discovering streams: %v", err)
+						}
 					}
 				}
 			}
