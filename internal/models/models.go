@@ -37,3 +37,15 @@ type Result struct {
 	VideoID string
 	URL     string
 }
+
+type Channel struct {
+	ID         string
+	Name       string
+	Active     bool
+	Category   *string
+	Language   *string
+	Country    *string
+	FollowedAt time.Time
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
