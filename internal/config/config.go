@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/logger"
@@ -18,6 +20,7 @@ type Config struct {
 }
 
 func Load() Config {
+	loadEnvFromBinaryDir()
 
 	channelIDsEnv := os.Getenv("YOUTUBE_CHANNEL_IDS")
 	channelFile := getEnv("YOUTUBE_CHANNEL_FILE", "channels.txt")
@@ -63,6 +66,41 @@ func Load() Config {
 		ChannelFilePath: channelFile,
 		ChannelNames:    channelNames,
 	}
+}
+
+func loadEnvFromBinaryDir() {
+	exePath, err := os.Executable()
+	if err != nil {
+		logger.Debug("could not determine executable path: %v", err)
+		return
+	}
+
+	envPath := filepath.Join(filepath.Dir(exePath), ".env")
+	f, err := os.Open(envPath)
+	if err != nil {
+		logger.Debug("no .env file found in binary directory: %s", envPath)
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		if key != "" && os.Getenv(key) == "" {
+			os.Setenv(key, value)
+		}
+	}
+
+	logger.Debug("loaded environment from: %s", envPath)
 }
 
 func parseCSV(val string) []string {
