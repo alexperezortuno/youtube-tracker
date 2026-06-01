@@ -13,7 +13,8 @@ It is built to run continuous discovery and metric collection cycles, and it als
 - Persistence of streams and metrics in a database
 - Redis-based storage for active streams
 - PostgreSQL + TimescaleDB for time-series data
-- Support for multiple channels
+- Support for multiple channels with database storage
+- Channel metadata flags (category, language, country) for analysis
 - SQL scripts for audience, engagement, and trend analysis
 - Local infrastructure with Docker Compose
 - Environment-based configuration
@@ -37,10 +38,11 @@ It is built to run continuous discovery and metric collection cycles, and it als
 youtube-tracker/
     ├── bin/                    # Compiled binaries
     ├── cmd/                    # Command line applications
-    │   ├── daily.go            # Daily metrics collector
-    │   ├── discover.go         # Livestream discovery service
-    │   ├── metrics.go          # Real-time metrics collector
-    │   └── root.go             # Root command and CLI setup
+    │   ├── channels.go         # Channel management CLI
+    │   ├── daily.go             # Daily metrics collector
+    │   ├── discover.go          # Livestream discovery service
+    │   ├── metrics.go           # Real-time metrics collector
+    │   └── root.go              # Root command and CLI setup
     ├── internal/               # Internal packages
     │   ├── cache/              # Redis cache implementation
     │   ├── collector/          # Metrics collection logic
@@ -294,6 +296,89 @@ source .env && curl \
 ```bash
 ./bin/app daily --interval 12 --log-level=debug
 ```
+
+---
+
+## Channel Management
+
+Channels are now stored in the database with metadata flags for analysis.
+
+### Initialize the database
+
+Run the migration to create the channels table with flags:
+
+```bash
+psql -f scripts/database/013_channels_with_flags.sql
+```
+
+### Add a channel
+
+```bash
+./bin/yt-tracker channels add \
+  --id UCxxxxxxxxxxxxxxxxxxxxxxxxx \
+  --name "Channel Name" \
+  --category news \
+  --language es \
+  --country MX
+```
+
+**Flags:**
+- `--id, -i` - YouTube channel ID (required)
+- `--name, -n` - Channel display name (required)
+- `--category, -c` - Category (e.g., news, gaming, music)
+- `--language, -l` - Language code (e.g., es, en, pt)
+- `--country, -o` - Country code (e.g., MX, US, AR)
+
+### List channels
+
+```bash
+./bin/yt-tracker channels list           # Active channels only
+./bin/yt-tracker channels list --all     # Include inactive channels
+```
+
+### Update a channel
+
+```bash
+./bin/yt-tracker channels update --id UCxxx --active=false
+./bin/yt-tracker channels update --id UCxxx --category gaming
+```
+
+**Flags:**
+- `--id, -i` - Channel ID to update (required)
+- `--name, -n` - New channel name
+- `--active, -e` - Set active status (true/false)
+- `--category, -c` - New category
+- `--language, -l` - New language code
+- `--country, -o` - New country code
+
+### Remove a channel
+
+```bash
+./bin/yt-tracker channels remove --id UCxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+---
+
+## Channel Flags for Analysis
+
+The channels table stores the following metadata for analysis:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `active` | boolean | Whether the channel is being tracked |
+| `category` | text | Content category (news, gaming, music, etc.) |
+| `language` | text | Primary language code (es, en, pt, etc.) |
+| `country` | text | Target country code (MX, US, AR, etc.) |
+| `followed_at` | timestamp | When the channel was added to tracking |
+| `created_at` | timestamp | Channel record creation time |
+| `updated_at` | timestamp | Last update time |
+
+These flags enable analysis such as:
+- Engagement by category, language, or country
+- Tracking which channels are most active
+- Audience segmentation based on channel metadata
+
+---
 
 ### Install via Curl
 
