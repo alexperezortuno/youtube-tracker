@@ -3,7 +3,7 @@
 set -e
 
 REPO="alexperezortuno/youtube-tracker"
-BINARY="youtube-tracker"
+BINARY="yt-tracker"
 
 OS=$(uname | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
