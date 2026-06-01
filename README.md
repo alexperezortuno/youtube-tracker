@@ -84,7 +84,10 @@ youtube-tracker/
 
 ## Configuration
 
-The application uses a `.env` file for configuration.
+The application loads configuration from environment variables. It supports two `.env` file locations:
+
+1. **Binary directory**: If the binary is run from a directory containing a `.env` file, it will be loaded automatically from the same directory as the binary (e.g., `./bin/.env`)
+2. **Project directory**: Traditional `.env` file in the project root
 
 ### Environment Variables
 
@@ -95,11 +98,7 @@ REDIS_ADDR=localhost:6379
 CHANNEL_IDS=channel_id_1,channel_id_2,channel_id_3
 ```
 
-> Note: the exact variable names may depend on your current `config.Load()` implementation.
-
-```bash
-git clone https://github.com/alexperezortuno/youtube-tracker.git cd youtube-tracker
-```
+> Note: Environment variables set in the shell take precedence over `.env` file values.
 
 ### 2. Configure environment variables
 
