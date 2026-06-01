@@ -3,7 +3,7 @@ ifneq (,$(wildcard .env))
 	export
 endif
 
-APP_NAME := youtube-tracker
+APP_NAME := yt-tracker
 GO := go
 
 CMD := ./main.go

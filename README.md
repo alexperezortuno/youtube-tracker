@@ -13,7 +13,8 @@ It is built to run continuous discovery and metric collection cycles, and it als
 - Persistence of streams and metrics in a database
 - Redis-based storage for active streams
 - PostgreSQL + TimescaleDB for time-series data
-- Support for multiple channels
+- Support for multiple channels with database storage
+- Channel metadata flags (category, language, country) for analysis
 - SQL scripts for audience, engagement, and trend analysis
 - Local infrastructure with Docker Compose
 - Environment-based configuration
@@ -34,29 +35,40 @@ It is built to run continuous discovery and metric collection cycles, and it als
 ## Project Structure
 
 ```text
-youtube-tracker/ 
-    ├── cmd/ 
-    │ ├── daily.go
-    │ ├── discover.go
-    │ ├── metrics.go
-    │ └── root.go 
-    ├── internal/ 
-    │ ├── cache/ 
-    │ ├── collector/ 
-    │ ├── config/ 
-    │ ├── discovery/ 
-    │ ├── lifecycle/ 
-    │ ├── models/ 
-    │ ├── source/ 
-    │ └── storage/ 
-    ├── scripts/ 
-    │ ├── migrations/ 
-    │ └── *.sql 
-    ├── docker-compose.yml 
-    ├── Makefile 
-    ├── go.mod 
-    ├── main.go 
-    └── README.md
+youtube-tracker/
+    ├── bin/                    # Compiled binaries
+    ├── cmd/                    # Command line applications
+    │   ├── channels.go         # Channel management CLI
+    │   ├── daily.go             # Daily metrics collector
+    │   ├── discover.go          # Livestream discovery service
+    │   ├── metrics.go           # Real-time metrics collector
+    │   └── root.go              # Root command and CLI setup
+    ├── internal/               # Internal packages
+    │   ├── cache/              # Redis cache implementation
+    │   ├── collector/          # Metrics collection logic
+    │   ├── config/             # Configuration management
+    │   ├── discovery/          # Livestream discovery logic
+    │   ├── lifecycle/          # Application lifecycle management
+    │   ├── models/             # Data models and structures
+    │   ├── source/             # YouTube API data sources
+    │   └── storage/            # Database storage implementation
+    ├── scripts/                # Utility scripts
+    │   ├── backup-logs.sh      # Log backup script
+    │   ├── database/           # Database migration scripts
+    │   ├── install.sh          # Installation script
+    │   ├── manager.sh          # Process management script
+    │   └── viewers_x_minute.sql # SQL analysis script
+    ├── .env                    # Environment configuration
+    ├── .gitignore              # Git ignore rules
+    ├── channel_names.txt       # List of channel names to track
+    ├── channels.txt            # List of channel IDs to track
+    ├── docker-compose.yml      # Docker Compose configuration
+    ├── Dockerfile              # Docker configuration
+    ├── go.mod                  # Go module definition
+    ├── go.sum                  # Go module checksums
+    ├── main.go                 # Application entry point
+    ├── Makefile                # Build automation
+    └── README.md               # Project documentation
 ```
 
 ---
@@ -72,7 +84,10 @@ youtube-tracker/
 
 ## Configuration
 
-The application uses a `.env` file for configuration.
+The application loads configuration from environment variables. It supports two `.env` file locations:
+
+1. **Binary directory**: If the binary is run from a directory containing a `.env` file, it will be loaded automatically from the same directory as the binary (e.g., `./bin/.env`)
+2. **Project directory**: Traditional `.env` file in the project root
 
 ### Environment Variables
 
@@ -83,11 +98,7 @@ REDIS_ADDR=localhost:6379
 CHANNEL_IDS=channel_id_1,channel_id_2,channel_id_3
 ```
 
-> Note: the exact variable names may depend on your current `config.Load()` implementation.
-
-```bash
-git clone https://github.com/alexperezortuno/youtube-tracker.git cd youtube-tracker
-```
+> Note: Environment variables set in the shell take precedence over `.env` file values.
 
 ### 2. Configure environment variables
 
@@ -128,6 +139,91 @@ make db-init
 
 ### Run locally
 
+#### Using the Manager Script
+
+The `./scripts/manager.sh` script provides a convenient way to manage the discover, collector, and metrics processes. Each process runs in the background and logs to the `logs/` directory with their PID stored in the `pids/` directory.
+
+##### Available Commands
+
+```bash
+# Start all processes
+./scripts/manager.sh start all
+
+# Start individual processes
+./scripts/manager.sh start discover
+./scripts/manager.sh start collector
+./scripts/manager.sh start metrics
+
+# Stop all processes
+./scripts/manager.sh stop all
+
+# Stop individual processes
+./scripts/manager.sh stop discover
+./scripts/manager.sh stop collector
+./scripts/manager.sh stop metrics
+
+# Check status of all processes
+./scripts/manager.sh status
+```
+
+##### Process Details
+
+- **discover**: Detects new livestreams with 30-second intervals
+  - Command: `./youtube-tracker discover --interval 30 --extractor --log-level=debug`
+- **collector**: Collects daily metrics with 3-minute intervals
+  - Command: `./youtube-tracker daily --interval 3 --log-level=debug`
+- **metrics**: Collects stream metrics with 30-second intervals
+  - Command: `./youtube-tracker metrics --interval 30 --log-level=debug`
+
+##### Log Files
+
+Each process logs to:
+- `logs/discover.log`
+- `logs/collector.log`
+- `logs/metrics.log`
+
+##### PID Files
+
+Each process stores its PID in:
+- `pids/discover.pid`
+- `pids/collector.pid`
+- `pids/metrics.pid`
+
+#### Backup Logs Script
+
+The `./scripts/backup-logs.sh` script provides functionality to archive the logs directory and optionally send it to a remote server using rsync.
+
+##### Available Commands
+
+```bash
+# Create a backup of logs directory
+./scripts/backup-logs.sh
+
+# Create a backup and send it to a remote server using rsync
+./scripts/backup-logs.sh --rsync
+
+# Create a backup and clean the logs directory after creating the backup
+./scripts/backup-logs.sh --clean
+
+# Create a backup, send it to a remote server, and clean the logs directory
+./scripts/backup-logs.sh --rsync --clean
+```
+
+##### Script Details
+
+- Archives the `logs/` directory into a timestamped tar.gz file in the `backups/` directory
+- Format: `backups/logs_{hostname}_{timestamp}.tar.gz`
+- Optional rsync functionality to send backups to a remote server
+- Optional log cleaning functionality to truncate log files after backup
+
+##### Configuration
+
+The script uses the following default settings for rsync:
+- Remote user: `user`
+- Remote host: `10.0.0.10`
+- Remote path: `/data/youtube-tracker/logs`
+
+These settings would need to be modified in the script for your specific environment.
 
 ---
 
@@ -199,6 +295,89 @@ source .env && curl \
 ```bash
 ./bin/app daily --interval 12 --log-level=debug
 ```
+
+---
+
+## Channel Management
+
+Channels are now stored in the database with metadata flags for analysis.
+
+### Initialize the database
+
+Run the migration to create the channels table with flags:
+
+```bash
+psql -f scripts/database/013_channels_with_flags.sql
+```
+
+### Add a channel
+
+```bash
+./bin/yt-tracker channels add \
+  --id UCxxxxxxxxxxxxxxxxxxxxxxxxx \
+  --name "Channel Name" \
+  --category news \
+  --language es \
+  --country MX
+```
+
+**Flags:**
+- `--id, -i` - YouTube channel ID (required)
+- `--name, -n` - Channel display name (required)
+- `--category, -c` - Category (e.g., news, gaming, music)
+- `--language, -l` - Language code (e.g., es, en, pt)
+- `--country, -o` - Country code (e.g., MX, US, AR)
+
+### List channels
+
+```bash
+./bin/yt-tracker channels list           # Active channels only
+./bin/yt-tracker channels list --all     # Include inactive channels
+```
+
+### Update a channel
+
+```bash
+./bin/yt-tracker channels update --id UCxxx --active=false
+./bin/yt-tracker channels update --id UCxxx --category gaming
+```
+
+**Flags:**
+- `--id, -i` - Channel ID to update (required)
+- `--name, -n` - New channel name
+- `--active, -e` - Set active status (true/false)
+- `--category, -c` - New category
+- `--language, -l` - New language code
+- `--country, -o` - New country code
+
+### Remove a channel
+
+```bash
+./bin/yt-tracker channels remove --id UCxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+---
+
+## Channel Flags for Analysis
+
+The channels table stores the following metadata for analysis:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `active` | boolean | Whether the channel is being tracked |
+| `category` | text | Content category (news, gaming, music, etc.) |
+| `language` | text | Primary language code (es, en, pt, etc.) |
+| `country` | text | Target country code (MX, US, AR, etc.) |
+| `followed_at` | timestamp | When the channel was added to tracking |
+| `created_at` | timestamp | Channel record creation time |
+| `updated_at` | timestamp | Last update time |
+
+These flags enable analysis such as:
+- Engagement by category, language, or country
+- Tracking which channels are most active
+- Audience segmentation based on channel metadata
+
+---
 
 ### Install via Curl
 

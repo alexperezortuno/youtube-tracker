@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS metrics_db.tags
+(
+    id   SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+);

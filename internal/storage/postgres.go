@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"github.com/alexperezortuno/youtube-tracker/internal/models"
@@ -14,7 +13,7 @@ type Store struct {
 }
 
 type DBSource struct {
-	DB *sql.DB
+	Pool *pgxpool.Pool
 }
 
 func NewStore(conn string) (*Store, error) {
@@ -25,16 +24,21 @@ func NewStore(conn string) (*Store, error) {
 	return &Store{DB: pool}, nil
 }
 
+func NewDBSource(pool *pgxpool.Pool) *DBSource {
+	return &DBSource{Pool: pool}
+}
+
 func (s *Store) SaveMetrics(ctx context.Context, metrics []models.Metric) error {
 	for _, m := range metrics {
 		_, err := s.DB.Exec(ctx,
-			`INSERT INTO livestream_metrics 
-				(time, video_id, video_title, channel_title, viewers, likes)
-				VALUES ($1, $2, $3, $4, $5, $6)`,
+			`INSERT INTO livestream_metrics
+				(time, video_id, video_title, channel_title, channel_id, viewers, likes)
+				VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 			time.Now(),
 			m.VideoID,
 			m.VideoTitle,
 			m.ChannelTitle,
+			m.ChannelID,
 			m.Viewers,
 			m.Likes,
 		)
@@ -50,12 +54,13 @@ func (s *Store) SaveStreams(ctx context.Context, streams []models.Stream) error 
 
 	for _, st := range streams {
 		_, err := s.DB.Exec(ctx,
-			`INSERT INTO streams (video_id, video_title, channel_title)
-			 VALUES ($1, $2, $3)
+			`INSERT INTO streams (video_id, video_title, channel_title, channel_id)
+			 VALUES ($1, $2, $3, $4)
 			 ON CONFLICT (video_id) DO NOTHING`,
 			st.VideoID,
 			st.VideoTitle,
 			st.ChannelTitle,
+			st.ChannelID,
 		)
 		if err != nil {
 			return err
@@ -66,7 +71,7 @@ func (s *Store) SaveStreams(ctx context.Context, streams []models.Stream) error 
 }
 
 func (d *DBSource) GetChannelIDs() ([]string, error) {
-	rows, err := d.DB.Query("SELECT channel_id FROM channels WHERE active = true")
+	rows, err := d.Pool.Query(context.Background(), "SELECT id FROM channels WHERE active = true")
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +80,85 @@ func (d *DBSource) GetChannelIDs() ([]string, error) {
 	var result []string
 	for rows.Next() {
 		var id string
-		rows.Scan(&id)
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
 		result = append(result, id)
 	}
 
 	return result, nil
+}
+
+func (d *DBSource) GetChannels(activeOnly bool) ([]models.Channel, error) {
+	query := "SELECT id, name, active, category, language, country, followed_at, created_at, updated_at FROM channels"
+	if activeOnly {
+		query += " WHERE active = true"
+	}
+
+	rows, err := d.Pool.Query(context.Background(), query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var channels []models.Channel
+	for rows.Next() {
+		var ch models.Channel
+		if err := rows.Scan(&ch.ID, &ch.Name, &ch.Active, &ch.Category, &ch.Language, &ch.Country, &ch.FollowedAt, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
+			return nil, err
+		}
+		channels = append(channels, ch)
+	}
+
+	return channels, nil
+}
+
+func (d *DBSource) AddChannel(ctx context.Context, ch models.Channel) error {
+	_, err := d.Pool.Exec(ctx,
+		`INSERT INTO channels (id, name, active, category, language, country, followed_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (id) DO UPDATE SET
+		   name = EXCLUDED.name,
+		   active = EXCLUDED.active,
+		   category = EXCLUDED.category,
+		   language = EXCLUDED.language,
+		   country = EXCLUDED.country,
+		   updated_at = NOW()`,
+		ch.ID, ch.Name, ch.Active, ch.Category, ch.Language, ch.Country, ch.FollowedAt,
+	)
+	return err
+}
+
+func (d *DBSource) UpdateChannel(ctx context.Context, ch models.Channel) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE channels SET
+		   name = $2,
+		   active = $3,
+		   category = $4,
+		   language = $5,
+		   country = $6,
+		   updated_at = NOW()
+		 WHERE id = $1`,
+		ch.ID, ch.Name, ch.Active, ch.Category, ch.Language, ch.Country,
+	)
+	return err
+}
+
+func (d *DBSource) DeleteChannel(ctx context.Context, id string) error {
+	_, err := d.Pool.Exec(ctx, "DELETE FROM channels WHERE id = $1", id)
+	return err
+}
+
+func (d *DBSource) GetChannelByID(ctx context.Context, id string) (*models.Channel, error) {
+	var ch models.Channel
+	err := d.Pool.QueryRow(ctx,
+		"SELECT id, name, active, category, language, country, followed_at, created_at, updated_at FROM channels WHERE id = $1",
+		id,
+	).Scan(&ch.ID, &ch.Name, &ch.Active, &ch.Category, &ch.Language, &ch.Country, &ch.FollowedAt, &ch.CreatedAt, &ch.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &ch, nil
 }
 
 func (s *Store) SaveDailyStats(ctx context.Context, stats []models.VideoDailyStat) error {
