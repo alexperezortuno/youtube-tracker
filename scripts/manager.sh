@@ -16,7 +16,7 @@
 
 set -e
 
-APP="./youtube-tracker"
+APP="./yt-tracker"
 
 LOG_DIR="logs"
 PID_DIR="pids"
