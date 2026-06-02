@@ -33,3 +33,6 @@ go.work.sum
 bin/*
 *.txt
 AGENTS.md
+skills-lock.json
+SKILL.md
+.agents
