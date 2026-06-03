@@ -6,7 +6,7 @@ WITH peak_viewers AS (
         AVG(viewers) as avg_viewers,
         COUNT(*) as data_points
     FROM metrics_db.livestream_metrics
-    WHERE time BETWEEN '$dateFrom' AND '$dateTo'
+    WHERE time BETWEEN '$dateFrom'::timestamp AND '$dateTo'::timestamp
     GROUP BY video_id
 )
 SELECT
