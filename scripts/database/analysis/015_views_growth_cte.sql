@@ -1,12 +1,12 @@
 -- Top videos por crecimiento de views (usando CTE)
 WITH latest AS (SELECT video_id, MAX(views) as views
                 FROM metrics_db.video_daily_stats
-                WHERE date >= CURRENT_DATE - INTERVAL '1 day'
+                WHERE date >= '$dateFrom'::timestamp - INTERVAL '1 day'
 GROUP BY video_id),
     yesterday AS (SELECT video_id, MAX(views) as views
 FROM metrics_db.video_daily_stats
-WHERE date < CURRENT_DATE - INTERVAL '1 day'
-  AND date >= CURRENT_DATE - INTERVAL '2 days'
+WHERE date < '$dateFrom'::timestamp - INTERVAL '1 day'
+  AND date >= '$dateTo'::timestamp - INTERVAL '2 days'
 GROUP BY video_id)
 SELECT s.video_title,
        s.video_id,

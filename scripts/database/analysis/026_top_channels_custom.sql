@@ -9,9 +9,9 @@ SELECT
     ROUND(AVG(lm.viewers), 0) as avg_viewers,
     SUM(lm.viewers) / 1000000.0 as total_viewers_millions
 FROM metrics_db.livestream_metrics lm
-JOIN metrics_db.streams s ON s.video_id = lm.video_id
-JOIN metrics_db.channels ch ON ch.id = s.channel_id
-WHERE lm.time BETWEEN '$dateFrom' AND '$dateTo'
+         JOIN metrics_db.streams s ON s.video_id = lm.video_id
+         JOIN metrics_db.channels ch ON ch.id = s.channel_id
+WHERE lm.time BETWEEN '$dateFrom'::timestamp AND '$dateTo'::timestamp
 GROUP BY ch.id, ch.name, ch.category, ch.language
 ORDER BY total_viewers_millions DESC
 LIMIT 20;
