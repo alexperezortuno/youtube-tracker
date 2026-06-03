@@ -1,7 +1,7 @@
 WITH last_per_video AS (
     SELECT video_id, MAX(date) AS last_date
     FROM metrics_db.video_daily_stats
-    WHERE date BETWEEN '$dateFrom'::timestamp AND '$dateTo'::timestamp
+    WHERE date BETWEEN ('$dateFrom'::timestamp - INTERVAL '1 day') AND '$dateTo'::timestamp
     GROUP BY video_id
 )
 SELECT
@@ -16,6 +16,6 @@ FROM metrics_db.video_daily_stats vds
                   AND vds.date = lpv.last_date
          JOIN metrics_db.streams s
               ON s.video_id = vds.video_id
-WHERE vds.date BETWEEN '$dateFrom'::timestamp AND '$dateTo'::timestamp
+WHERE vds.date BETWEEN ('$dateFrom'::timestamp - INTERVAL '1 day') AND '$dateTo'::timestamp
 ORDER BY vds.likes DESC
 LIMIT 10;
