@@ -6,7 +6,7 @@ WITH peak_viewers AS (
         AVG(viewers) as avg_viewers,
         COUNT(*) as data_points
     FROM metrics_db.livestream_metrics
-    WHERE time >= NOW() - INTERVAL '24 hours'
+    WHERE time BETWEEN '$dateFrom' AND '$dateTo'
     GROUP BY video_id
 )
 SELECT
@@ -19,7 +19,7 @@ SELECT
     pv.avg_viewers,
     pv.data_points
 FROM peak_viewers pv
-JOIN metrics_db.streams s ON s.video_id = pv.video_id
-LEFT JOIN metrics_db.channels ch ON ch.id = s.channel_id
+         JOIN metrics_db.streams s ON s.video_id = pv.video_id
+         LEFT JOIN metrics_db.channels ch ON ch.id = s.channel_id
 ORDER BY pv.peak_viewers DESC
 LIMIT 20;
