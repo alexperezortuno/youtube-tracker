@@ -6,7 +6,7 @@ WITH daily AS (
         MAX(lm.viewers) as peak_of_day,
         AVG(lm.viewers) as avg_of_day
     FROM metrics_db.livestream_metrics lm
-    WHERE lm.time BETWEEN '$dateFrom' AND '$dateTo'
+    WHERE lm.time BETWEEN '$dateFrom'::timestamp AND '$dateTo'::timestamp
     GROUP BY DATE_TRUNC('day', lm.time)
 )
 SELECT
